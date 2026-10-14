@@ -8,7 +8,7 @@
 ## 安装
 
 ```bash
-go get github.com/yi-nology/ekit-kitex@v0.3.0
+go get github.com/yi-nology/ekit-kitex@v0.3.1
 ```
 
 ## 包清单
@@ -20,7 +20,7 @@ go get github.com/yi-nology/ekit-kitex@v0.3.0
 - \`observability/tracing/instrumentation/kitexotel/\` — OTel server/client suite
 - \`examples/\` — kitex echo 示例；\`internal/e2e/\` — e2e 生成代码
 
-> Istio Proxyless 已迁 [ekit-istio](https://github.com/yi-nology/ekit-istio)；echo 示例已迁 [ekit-kitex-examples](https://github.com/yi-nology/ekit-kitex-examples)——本仓库因此**不再依赖 bootstrap 链**。
+> Istio Proxyless 已迁 [ekit-istio](https://github.com/yi-nology/ekit-istio)；echo 示例已迁 [ekit-kitex-examples](https://github.com/yi-nology/ekit-kitex-examples)——本仓库**生产代码不再依赖 bootstrap 链**（go.mod 中 bootstrap require 仅供本仓测试用例引用，消费者构建图不含它）。
 
 ## 依赖关系
 
