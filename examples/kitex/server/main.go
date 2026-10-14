@@ -10,10 +10,10 @@ import (
 	ekitkitex "github.com/yi-nology/ekit-kitex/kitex"
 	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
 	"github.com/yi-nology/ekit-logx"
-	"github.com/yi-nology/ekit-tracing"
 	"github.com/yi-nology/ekit-registry/config"
 	"github.com/yi-nology/ekit-registry/nacos"
 	nacosimpl "github.com/yi-nology/ekit-registry/registry/nacos"
+	"github.com/yi-nology/ekit-tracing"
 
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/server"

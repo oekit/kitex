@@ -12,13 +12,13 @@ require (
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507
 	github.com/prometheus/client_golang v1.24.1
-	github.com/yi-nology/ekit-bootstrap v0.1.0
+	github.com/yi-nology/ekit-bootstrap v0.2.1
 	github.com/yi-nology/ekit-concurrency v0.1.0
-	github.com/yi-nology/ekit-core v0.1.0
-	github.com/yi-nology/ekit-logx v0.1.0
+	github.com/yi-nology/ekit-core v0.2.0
+	github.com/yi-nology/ekit-logx v0.1.1
 	github.com/yi-nology/ekit-metrics v0.1.0
-	github.com/yi-nology/ekit-nns v0.1.0
-	github.com/yi-nology/ekit-registry v0.1.0
+	github.com/yi-nology/ekit-nns v0.2.1
+	github.com/yi-nology/ekit-registry v0.2.0
 	github.com/yi-nology/ekit-tracing v0.1.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
@@ -77,6 +77,7 @@ require (
 	github.com/jhump/protoreflect v1.8.2 // indirect
 	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -93,8 +94,7 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
-	github.com/yi-nology/ekit-network v0.1.0 // indirect
-	github.com/yi-nology/ekit-observability v0.1.0 // indirect
+	github.com/yi-nology/ekit-httpx v0.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.62.0 // indirect
 	go.opentelemetry.io/contrib/propagators/b3 v1.28.0 // indirect
