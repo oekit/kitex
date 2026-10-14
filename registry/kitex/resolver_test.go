@@ -6,10 +6,10 @@ import (
 	"net"
 	"testing"
 
-	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
-	"github.com/yi-nology/ekit-registry/registry"
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/yi-nology/ekit-registry/registry"
+	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
 )
 
 type mockEndpointInfo struct {

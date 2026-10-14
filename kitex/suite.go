@@ -3,11 +3,11 @@ package kitex
 import (
 	"sync"
 
-	"github.com/yi-nology/ekit-observability/observability/metrics/resilience"
 	"github.com/cloudwego/kitex/client"
 	klimiter "github.com/cloudwego/kitex/pkg/limiter"
 	"github.com/cloudwego/kitex/server"
 	prom "github.com/prometheus/client_golang/prometheus"
+	"github.com/yi-nology/ekit-observability/observability/metrics/resilience"
 )
 
 // ClientSuite 聚合 Kitex 客户端治理选项（retry + rpc_timeout + circuit_breaker）。

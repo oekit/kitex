@@ -10,9 +10,9 @@ import (
 	"github.com/cloudwego/kitex/pkg/registry"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 
-	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
 	nnsclient "github.com/yi-nology/ekit-nns/nns/client"
 	regpkg "github.com/yi-nology/ekit-registry/registry"
+	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
 )
 
 // newTestClientWithRegistrar returns a client with a capturing registrar

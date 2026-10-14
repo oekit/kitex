@@ -5,9 +5,9 @@ import (
 	"net"
 	"testing"
 
-	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
-	"github.com/yi-nology/ekit-core/network"
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
+	"github.com/yi-nology/ekit-core/network"
+	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
 )
 
 func TestNewRegistry(t *testing.T) {

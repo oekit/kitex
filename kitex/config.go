@@ -2,15 +2,15 @@ package kitex
 
 import (
 	"fmt"
-	"github.com/yi-nology/ekit-core/governance"
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/rpctimeout"
+	"github.com/yi-nology/ekit-core/governance"
 	"strings"
 	"sync"
 
-	"github.com/yi-nology/ekit-observability/observability/logx"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
+	"github.com/yi-nology/ekit-observability/observability/logx"
 )
 
 var govLog = logx.Delegating("kitex-gov")

@@ -7,18 +7,18 @@ import (
 	"time"
 
 	"github.com/yi-nology/ekit-bootstrap/bootstrap"
-	"github.com/yi-nology/ekit-registry/config"
 	ekitkitex "github.com/yi-nology/ekit-kitex/kitex"
-	"github.com/yi-nology/ekit-registry/nacos"
+	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
 	"github.com/yi-nology/ekit-observability/observability/logx"
 	"github.com/yi-nology/ekit-observability/observability/tracing"
-	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
+	"github.com/yi-nology/ekit-registry/config"
+	"github.com/yi-nology/ekit-registry/nacos"
 	nacosimpl "github.com/yi-nology/ekit-registry/registry/nacos"
 
-	echo "github.com/yi-nology/ekit-kitex/examples/kitex/kitex_gen/kitex/echo"
-	"github.com/yi-nology/ekit-kitex/examples/kitex/kitex_gen/kitex/echo/echoservice"
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/server"
+	echo "github.com/yi-nology/ekit-kitex/examples/kitex/kitex_gen/kitex/echo"
+	"github.com/yi-nology/ekit-kitex/examples/kitex/kitex_gen/kitex/echo/echoservice"
 )
 
 type AppConfig struct {

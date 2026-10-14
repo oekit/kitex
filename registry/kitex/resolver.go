@@ -3,10 +3,10 @@ package kitex
 import (
 	"context"
 
-	"github.com/yi-nology/ekit-registry/registry/sdbridge"
-	"github.com/yi-nology/ekit-registry/registry"
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/yi-nology/ekit-registry/registry"
+	"github.com/yi-nology/ekit-registry/registry/sdbridge"
 )
 
 const resolverName = "ekit"

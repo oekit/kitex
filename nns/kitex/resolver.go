@@ -3,11 +3,11 @@ package kitex
 import (
 	"context"
 
-	"github.com/yi-nology/ekit-registry/registry/sdbridge"
-	nnsclient "github.com/yi-nology/ekit-nns/nns/client"
-	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
+	nnsclient "github.com/yi-nology/ekit-nns/nns/client"
+	"github.com/yi-nology/ekit-registry/registry/sdbridge"
 )
 
 const resolverName = "nns-kitex"

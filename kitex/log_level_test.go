@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yi-nology/ekit-observability/observability/logx"
 	"github.com/cloudwego/kitex/pkg/klog"
+	"github.com/yi-nology/ekit-observability/observability/logx"
 )
 
 // recordingLogger 记录 SetLevel 调用，用于断言 klog → logx 级别映射。

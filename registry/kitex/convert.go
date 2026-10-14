@@ -4,8 +4,8 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/yi-nology/ekit-registry/registry"
 	kdiscovery "github.com/cloudwego/kitex/pkg/discovery"
+	"github.com/yi-nology/ekit-registry/registry"
 )
 
 // InstancesToKitex 将 ekit [registry.Instance] 列表转换为 Kitex [kdiscovery.Instance] 列表。

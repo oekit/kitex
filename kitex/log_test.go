@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/yi-nology/ekit-observability/observability/logx"
 	logxhlog "github.com/yi-nology/ekit-observability/observability/logx/hlog"
-	"github.com/cloudwego/kitex/pkg/klog"
 )
 
 func TestNewLogger_ImplementsFullLogger(t *testing.T) {

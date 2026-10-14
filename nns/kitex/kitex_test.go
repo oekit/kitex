@@ -5,11 +5,11 @@ import (
 	"net"
 	"testing"
 
-	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
+	kregistry "github.com/cloudwego/kitex/pkg/registry"
+	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
 	nnsclient "github.com/yi-nology/ekit-nns/nns/client"
 	"github.com/yi-nology/ekit-registry/registry"
-	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
-	kregistry "github.com/cloudwego/kitex/pkg/registry"
+	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
 )
 
 // 注意：nns/client.New 每次返回独立实例（不再使用 sync.Once 单例）。
