@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/bytedance/gopkg v0.1.4
-	github.com/cloudwego/gopkg v0.2.0
+	github.com/cloudwego/gopkg v0.2.1
 	github.com/cloudwego/hertz v0.10.6
 	github.com/cloudwego/kitex v0.16.3
 	github.com/kitex-contrib/monitor-prometheus v0.2.0
