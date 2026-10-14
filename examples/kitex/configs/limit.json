@@ -1,0 +1,4 @@
+{
+  "connection_limit": 100,
+  "qps_limit": 2000
+}

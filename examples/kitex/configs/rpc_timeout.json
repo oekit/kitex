@@ -1,0 +1,10 @@
+{
+  "*": {
+    "conn_timeout_ms": 100,
+    "rpc_timeout_ms": 3000
+  },
+  "Echo": {
+    "conn_timeout_ms": 50,
+    "rpc_timeout_ms": 1000
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "*": {
+    "enable": true,
+    "type": 0,
+    "failure_policy": {
+      "stop_policy": {
+        "max_retry_times": 3,
+        "max_duration_ms": 2000,
+        "cb_policy": {"error_rate": 0.5}
+      },
+      "backoff_policy": {
+        "backoff_type": "fixed",
+        "cfg_items": {"fix_ms": 50}
+      },
+      "retry_same_node": false
+    }
+  }
+}
