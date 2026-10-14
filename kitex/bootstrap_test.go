@@ -13,7 +13,7 @@ import (
 
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
 	"github.com/cloudwego/kitex/server"
-	"github.com/yi-nology/ekit-core/concurrency/async"
+	"github.com/yi-nology/ekit-concurrency/async"
 	"github.com/yi-nology/ekit-core/lifecycle"
 )
 

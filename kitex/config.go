@@ -10,7 +10,7 @@ import (
 
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
-	"github.com/yi-nology/ekit-observability/observability/logx"
+	"github.com/yi-nology/ekit-logx"
 )
 
 var govLog = logx.Delegating("kitex-gov")

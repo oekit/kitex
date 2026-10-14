@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/cloudwego/kitex/pkg/klog"
-	"github.com/yi-nology/ekit-observability/observability/logx"
+	"github.com/yi-nology/ekit-logx"
 )
 
 // kclogAdapter 将 ekit logx.Logger 适配为 Kitex klog.FullLogger。

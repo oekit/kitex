@@ -7,7 +7,7 @@ import (
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/circuitbreak"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
-	"github.com/yi-nology/ekit-observability/observability/metrics/resilience"
+	"github.com/yi-nology/ekit-metrics/resilience"
 )
 
 // methodCBKey 以 RPC 方法名作为服务级熔断配置 key，与 Nacos 配置格式（裸方法名）一致。

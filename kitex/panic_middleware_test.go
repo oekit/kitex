@@ -12,7 +12,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 
-	"github.com/yi-nology/ekit-observability/observability/logx"
+	"github.com/yi-nology/ekit-logx"
 )
 
 // captureLogger 捕获 CtxError 调用,其余方法透传给内嵌 Logger。

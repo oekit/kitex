@@ -10,7 +10,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	prom "github.com/prometheus/client_golang/prometheus"
-	"github.com/yi-nology/ekit-observability/observability/metrics/resilience"
+	"github.com/yi-nology/ekit-metrics/resilience"
 )
 
 // metricValue 从 Registry 黑盒采集指定 metric + labels 的值。

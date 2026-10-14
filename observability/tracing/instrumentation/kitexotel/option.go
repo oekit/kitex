@@ -10,7 +10,7 @@
 //
 // 集成方式(在 ekit 服务中):
 //
-//	import "github.com/yi-nology/ekit-observability/observability/tracing"
+//	import "github.com/yi-nology/ekit-tracing"
 //	import kitexotel "github.com/yi-nology/ekit-kitex/observability/tracing/instrumentation/kitexotel"
 //
 //	func main() {

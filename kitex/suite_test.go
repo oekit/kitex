@@ -7,7 +7,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/test/assert"
 	"github.com/cloudwego/kitex/server"
 	"github.com/yi-nology/ekit-bootstrap/bootstrap"
-	"github.com/yi-nology/ekit-observability/shutdown"
+	"github.com/yi-nology/ekit-logx/shutdown"
 )
 
 func TestRunServer_RegistersShutdownHook(t *testing.T) {
