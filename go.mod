@@ -19,7 +19,6 @@ require (
 	github.com/yi-nology/ekit-metrics v0.1.0
 	github.com/yi-nology/ekit-nns v0.2.1
 	github.com/yi-nology/ekit-registry v0.2.0
-	github.com/yi-nology/ekit-tracing v0.1.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
@@ -95,6 +94,7 @@ require (
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yi-nology/ekit-httpx v0.1.0 // indirect
+	github.com/yi-nology/ekit-tracing v0.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.62.0 // indirect
 	go.opentelemetry.io/contrib/propagators/b3 v1.28.0 // indirect

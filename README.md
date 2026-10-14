@@ -8,7 +8,7 @@
 ## 安装
 
 ```bash
-go get github.com/yi-nology/ekit-kitex@v0.2.0
+go get github.com/yi-nology/ekit-kitex@v0.3.0
 ```
 
 ## 包清单
@@ -20,7 +20,7 @@ go get github.com/yi-nology/ekit-kitex@v0.2.0
 - \`observability/tracing/instrumentation/kitexotel/\` — OTel server/client suite
 - \`examples/\` — kitex echo 示例；\`internal/e2e/\` — e2e 生成代码
 
-> Istio Proxyless 已迁 [ekit-istio](https://github.com/yi-nology/ekit-istio)。
+> Istio Proxyless 已迁 [ekit-istio](https://github.com/yi-nology/ekit-istio)；echo 示例已迁 [ekit-kitex-examples](https://github.com/yi-nology/ekit-kitex-examples)——本仓库因此**不再依赖 bootstrap 链**。
 
 ## 依赖关系
 
@@ -41,15 +41,17 @@ ekit-istio           Istio Proxyless                                    （零�
       ekit-nns       服务治理客户端                           → httpx, registry, core, logx, tracing, metrics
         ekit-bootstrap 应用引导
     ekit-middleware  Hertz 中间件栈                           → core, concurrency, logx, metrics, tracing, registry
-    ekit-hertz       Hertz 运行时/适配/instrumentation        → middleware, gorm, nns, registry, metrics, tracing, logx, core
-    ekit-kitex       Kitex 生态                               → nns, registry, core, concurrency, logx, metrics
+    ekit-handler     HTTP handler 层（CRUD/绑定/版本）        → middleware, gorm, core, tracing
+    ekit-hertz       Hertz 运行时/适配/instrumentation        → nns, registry, metrics, tracing, logx, core, concurrency
+    ekit-kitex       Kitex 生态                               → nns, registry, core, concurrency, logx, metrics, tracing
   ekit-workflow      流程编排                                 → concurrency, logx
+ekit-kitex-examples  Kitex 示例（echo client/server）         → kitex, bootstrap, registry, logx, tracing
 ```
 
 > 注：`ekit-observability` 已在 Round-2 深拆中解散——logx 迁 [ekit-logx]、metrics 迁 [ekit-metrics]、
 > tracing/traceid 迁 [ekit-tracing]、shutdown 迁 [ekit-logx]；原仓库已归档。
 
-依赖：[ekit-nns](https://github.com/yi-nology/ekit-nns)、[ekit-registry](https://github.com/yi-nology/ekit-registry)、[ekit-core](https://github.com/yi-nology/ekit-core)、[ekit-concurrency](https://github.com/yi-nology/ekit-concurrency)、[ekit-logx](https://github.com/yi-nology/ekit-logx)、[ekit-metrics](https://github.com/yi-nology/ekit-metrics)（examples 另引 ekit-bootstrap）。
+依赖：[ekit-nns](https://github.com/yi-nology/ekit-nns)、[ekit-registry](https://github.com/yi-nology/ekit-registry)、[ekit-core](https://github.com/yi-nology/ekit-core)、[ekit-concurrency](https://github.com/yi-nology/ekit-concurrency)、[ekit-logx](https://github.com/yi-nology/ekit-logx)、[ekit-metrics](https://github.com/yi-nology/ekit-metrics)。
 
 ## 与 ekit 单体仓库的关系
 
