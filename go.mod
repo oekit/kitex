@@ -14,7 +14,7 @@ require (
 	github.com/oekit/bootstrap v0.4.1
 	github.com/oekit/concurrency v0.1.5
 	github.com/oekit/core v0.3.3
-	github.com/oekit/logx v0.1.9
+	github.com/oekit/logx v0.2.0
 	github.com/oekit/metrics v0.1.5
 	github.com/oekit/nns v0.3.3
 	github.com/oekit/registry v0.2.6

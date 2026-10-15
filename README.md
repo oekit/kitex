@@ -20,7 +20,7 @@ go get github.com/oekit/kitex@v0.3.9
 
 | 包 | 做什么 |
 |---|---|
-| `kitex` | klog→logx 桥接、`GovernanceConfig`（Nacos 热更 retry/timeout/CB/limiter）、`RunServer`、`WithBizErrorBridge`（对端异常→本地 BizError）、`PanicLogMiddleware`、`NewServerTracingSuite` |
+| `kitex` | `GovernanceConfig`（Nacos 热更 retry/timeout/CB/limiter）、`RunServer`、`WithBizErrorBridge`（对端异常→本地 BizError）、`PanicLogMiddleware`、`NewServerTracingSuite`；klog→logx 桥已迁 [logx/kitexlog](https://github.com/oekit/logx)（`kitex.NewLogger` 保留 Deprecated 别名） |
 | `kitex/kitexmeta` | trace_id + 业务 metainfo 跨 RPC 透传（TTHeader） |
 | `registry/kitex` | Kitex 注册发现适配器 |
 | `nns/kitex` | NNS 适配器（服务发现 + 注册） |
@@ -31,9 +31,13 @@ go get github.com/oekit/kitex@v0.3.9
 ## 快速使用
 
 ```go
-import ekitkitex "github.com/oekit/kitex/kitex"
+import (
+    ekitkitex "github.com/oekit/kitex/kitex"
+    logxkitexlog "github.com/oekit/logx/kitexlog"
+)
 
-klog.SetLogger(ekitkitex.NewLogger(logx.NewSlogLogger("my-rpc")))
+// 日志桥接推荐直接用 logx/kitexlog（ekitkitex.NewLogger 已 Deprecated，别名委托实现）
+klog.SetLogger(logxkitexlog.NewLogger(logx.NewSlogLogger("my-rpc")))
 
 gov, _ := ekitkitex.NewGovernanceConfig(configCli,
     ekitkitex.WithGovernanceTemplate("my-service.governance"))

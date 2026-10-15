@@ -3,7 +3,6 @@ package kitex
 import (
 	"context"
 	"errors"
-	"io"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -494,24 +493,7 @@ func TestNewClientTracingSuite(t *testing.T) {
 	}
 }
 
-// --- log.go: SetOutput (the only uncovered method) ---
-
-// TestSetOutput_NoOp verifies kclogAdapter.SetOutput doesn't panic.
-// We construct the adapter directly (it's unexported but we're in
-// the same package, so it's accessible from the test).
-func TestSetOutput_NoOp(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("SetOutput panicked: %v", r)
-		}
-	}()
-	// NewLogger panics on nil, so we construct the adapter directly.
-	adapter := &kclogAdapter{}
-	adapter.SetOutput(io.Discard)
-}
-
-// We need io.Discard — import it as a tiny dependency.
-var _ = io.Discard
+// --- log.go: SetOutput 覆盖随实现迁至 logx/kitexlog（kitexlog.TestKclogAdapter_SetOutput_NoOp） ---
 
 // (helper import block, kept at the bottom for clarity)
 var (

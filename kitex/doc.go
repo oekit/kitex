@@ -2,7 +2,8 @@
 //
 // 本包覆盖以下能力：
 //
-//   - 日志桥接：将 Kitex klog 接管到 ekit [logx]（见 [NewLogger]）。
+//   - 日志桥接：将 Kitex klog 接管到 ekit [logx]——已迁 github.com/oekit/logx/kitexlog
+//     （kitexlog.NewLogger）；本包保留 [NewLogger] Deprecated 别名委托，行为一致。
 //   - 可观测性：Kitex OpenTelemetry tracing/metrics 一键接入（见 [NewServerTracingSuite]、[NewClientTracingSuite]）。
 //   - 治理配置：从 Nacos 配置中心加载 retry/rpc_timeout/circuit_breaker/limiter 策略并热更新（见 [NewGovernanceConfig]）。
 //   - Suite 聚合：以 Kitex [client.Suite]/[server.Suite] 形式聚合治理选项（见 [NewClientSuite]、[NewServerSuite]）。
@@ -10,8 +11,9 @@
 //
 // # 快速开始
 //
-//	// 1. 日志桥接（必须传 slog 实例避免无限递归）
-//	klog.SetLogger(kitex.NewLogger(logx.NewSlogLogger("my-rpc")))
+//	// 1. 日志桥接（推荐 logx/kitexlog；必须传 slog 实例避免无限递归）
+//	klog.SetLogger(kitexlog.NewLogger(logx.NewSlogLogger("my-rpc")))
+//	//    或 Deprecated 别名：klog.SetLogger(kitex.NewLogger(logx.NewSlogLogger("my-rpc")))
 //
 //	// 2. 可观测性（需先调用 tracing.Init）
 //	svr := echo.NewServer(new(Impl),
