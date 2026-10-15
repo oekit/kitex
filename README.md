@@ -3,6 +3,7 @@
 > Kitex RPC 生态——日志桥接、治理热更、生命周期、BizError 桥接、方法级指标与 OTel。
 
 > 项目主页：**https://oekit.github.io/** · 名称由来：**O**pen **E**asy **Kit**（开源 · 易用 · 工具集合）
+> 🤖 AI Agent：本仓规范与硬规则见 [AGENTS.md](AGENTS.md)；机器可读索引见 [llms.txt](https://oekit.github.io/llms.txt)（接口签名以源码为准）。
 
 本仓库是 [ekit](https://git.enjoye.top/enjoydream/ekit)（`git.enjoye.top/enjoydream/ekit` v0.34.0）
 拆分出的独立 Go module，属于 **oekit** oekit（Open Easy Kit）模块矩阵。
@@ -11,6 +12,17 @@
 
 ```bash
 go get github.com/oekit/kitex@v0.3.8
+```
+
+## 快速使用
+
+```go
+import (
+    ekitkitex "github.com/oekit/kitex/kitex"
+)
+
+svr := echo.NewServer(handler, server.WithSuite(ekitkitex.NewServerTracingSuite()))
+ekitkitex.RunServer(app, "echo-service", svr)
 ```
 
 ## 包清单
