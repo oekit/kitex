@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/gopkg v0.1.4
 	github.com/cloudwego/gopkg v0.2.1
 	github.com/cloudwego/hertz v0.10.6
-	github.com/cloudwego/kitex v0.16.3
+	github.com/cloudwego/kitex v0.16.4
 	github.com/kitex-contrib/monitor-prometheus v0.2.0
 	github.com/kitex-contrib/obs-opentelemetry v0.3.0
 	github.com/kitex-contrib/resolver-dns v0.1.0
@@ -56,12 +56,12 @@ require (
 	github.com/clbanning/mxj/v2 v2.5.5 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cloudwego/configmanager v0.2.3 // indirect
-	github.com/cloudwego/dynamicgo v0.8.0 // indirect
+	github.com/cloudwego/dynamicgo v0.9.2 // indirect
 	github.com/cloudwego/fastpb v0.0.6 // indirect
 	github.com/cloudwego/frugal v0.3.1 // indirect
-	github.com/cloudwego/localsession v0.2.1 // indirect
+	github.com/cloudwego/localsession v0.2.2 // indirect
 	github.com/cloudwego/netpoll v0.7.5 // indirect
-	github.com/cloudwego/runtimex v0.1.1 // indirect
+	github.com/cloudwego/runtimex v0.1.2 // indirect
 	github.com/cloudwego/thriftgo v0.4.5 // indirect
 	github.com/deckarep/golang-set v1.7.1 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
