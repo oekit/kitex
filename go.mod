@@ -12,13 +12,14 @@ require (
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507
 	github.com/prometheus/client_golang v1.24.1
-	github.com/yi-nology/ekit-bootstrap v0.2.1
+	github.com/yi-nology/ekit-bootstrap v0.2.2
 	github.com/yi-nology/ekit-concurrency v0.1.0
-	github.com/yi-nology/ekit-core v0.2.0
+	github.com/yi-nology/ekit-core v0.3.0
+	github.com/yi-nology/ekit-errors v0.1.0
 	github.com/yi-nology/ekit-logx v0.1.1
-	github.com/yi-nology/ekit-metrics v0.1.0
-	github.com/yi-nology/ekit-nns v0.2.1
-	github.com/yi-nology/ekit-registry v0.2.0
+	github.com/yi-nology/ekit-metrics v0.1.1
+	github.com/yi-nology/ekit-nns v0.3.0
+	github.com/yi-nology/ekit-registry v0.2.2
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
@@ -64,7 +65,6 @@ require (
 	github.com/cloudwego/thriftgo v0.4.5 // indirect
 	github.com/deckarep/golang-set v1.7.1 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
-	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
@@ -86,15 +86,13 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
-	github.com/sony/gobreaker v1.0.0 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
-	github.com/yi-nology/ekit-httpx v0.1.0 // indirect
-	github.com/yi-nology/ekit-tracing v0.1.0 // indirect
+	github.com/yi-nology/ekit-tracing v0.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.62.0 // indirect
 	go.opentelemetry.io/contrib/propagators/b3 v1.28.0 // indirect

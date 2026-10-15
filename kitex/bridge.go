@@ -8,7 +8,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 
-	ekiterr "github.com/yi-nology/ekit-core/pkg/errors"
+	ekiterr "github.com/yi-nology/ekit-errors"
 )
 
 // WithBizErrorBridge 返回 kitex client middleware,把对端抛的 kitex kerrors
