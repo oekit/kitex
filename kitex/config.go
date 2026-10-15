@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/rpctimeout"
-	"github.com/yi-nology/ekit-core/governance"
+	"github.com/oekit/core/governance"
 	"strings"
 	"sync"
 
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
-	"github.com/yi-nology/ekit-logx"
+	"github.com/oekit/logx"
 )
 
 var govLog = logx.Delegating("kitex-gov")

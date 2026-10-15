@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
-	"github.com/yi-nology/ekit-registry/registry"
-	"github.com/yi-nology/ekit-registry/registry/sdbridge"
+	"github.com/oekit/registry/registry"
+	"github.com/oekit/registry/registry/sdbridge"
 )
 
 // kitexRegistry 将 ekit [registry.Registrar] 适配为 Kitex [registry.Registry]。

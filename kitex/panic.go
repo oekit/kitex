@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 
-	"github.com/yi-nology/ekit-logx"
+	"github.com/oekit/logx"
 )
 
 // panicLog 是 kitex panic 专用 logger,

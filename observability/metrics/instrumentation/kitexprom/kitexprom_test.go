@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yi-nology/ekit-metrics"
+	"github.com/oekit/metrics"
 
 	prom "github.com/prometheus/client_golang/prometheus"
 )

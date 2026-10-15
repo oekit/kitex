@@ -5,8 +5,8 @@ import (
 	"runtime/debug"
 
 	"github.com/cloudwego/kitex/server"
-	"github.com/yi-nology/ekit-core/lifecycle"
-	"github.com/yi-nology/ekit-logx"
+	"github.com/oekit/core/lifecycle"
+	"github.com/oekit/logx"
 )
 
 // srvLog 是 server 生命周期专用 logger；治理配置日志见 govLog（component=kitex-gov）。

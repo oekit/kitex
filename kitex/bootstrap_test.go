@@ -13,8 +13,8 @@ import (
 
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
 	"github.com/cloudwego/kitex/server"
-	"github.com/yi-nology/ekit-concurrency/async"
-	"github.com/yi-nology/ekit-core/lifecycle"
+	"github.com/oekit/concurrency/async"
+	"github.com/oekit/core/lifecycle"
 )
 
 // fakeServer 是 server.Server 的最小测试实现：允许测试编程 Run/Stop 的返回行为。

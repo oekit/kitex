@@ -29,12 +29,12 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	ekiterrors "github.com/yi-nology/ekit-errors"
-	"github.com/yi-nology/ekit-kitex/kitex/kitexmeta"
-	kitexotel "github.com/yi-nology/ekit-kitex/observability/tracing/instrumentation/kitexotel"
+	ekiterrors "github.com/oekit/errors"
+	"github.com/oekit/kitex/kitex/kitexmeta"
+	kitexotel "github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel"
 
-	echo "github.com/yi-nology/ekit-kitex/internal/e2e/kitex_gen/kitex/echo"
-	echoservice "github.com/yi-nology/ekit-kitex/internal/e2e/kitex_gen/kitex/echo/echoservice"
+	echo "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo"
+	echoservice "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo/echoservice"
 )
 
 // echoHandler 是 e2e 用最小 handler:原样回显 message。

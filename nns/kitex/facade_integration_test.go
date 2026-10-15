@@ -3,8 +3,8 @@ package kitex
 import (
 	"testing"
 
-	nnsfacade "github.com/yi-nology/ekit-nns/nns"
-	nacospkg "github.com/yi-nology/ekit-registry/nacos"
+	nnsfacade "github.com/oekit/nns/nns"
+	nacospkg "github.com/oekit/registry/nacos"
 )
 
 // TestFacade_ServiceClientMakesKitexResolver 验证 NNS 门面暴露的 ServiceClient

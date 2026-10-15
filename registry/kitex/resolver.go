@@ -5,8 +5,8 @@ import (
 
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
-	"github.com/yi-nology/ekit-registry/registry"
-	"github.com/yi-nology/ekit-registry/registry/sdbridge"
+	"github.com/oekit/registry/registry"
+	"github.com/oekit/registry/registry/sdbridge"
 )
 
 const resolverName = "ekit"

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yi-nology/ekit-concurrency/async"
-	"github.com/yi-nology/ekit-metrics/resilience"
+	"github.com/oekit/concurrency/async"
+	"github.com/oekit/metrics/resilience"
 
 	gopkgcb "github.com/bytedance/gopkg/cloud/circuitbreaker"
 	"github.com/bytedance/gopkg/cloud/metainfo"

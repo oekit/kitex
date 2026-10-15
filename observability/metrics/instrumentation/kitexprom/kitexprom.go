@@ -27,8 +27,8 @@ import (
 	"github.com/cloudwego/kitex/pkg/stats"
 	"github.com/cloudwego/kitex/server"
 	kprom "github.com/kitex-contrib/monitor-prometheus"
+	"github.com/oekit/metrics"
 	prom "github.com/prometheus/client_golang/prometheus"
-	"github.com/yi-nology/ekit-metrics"
 )
 
 // tracerCache 按 (Registry, 侧) 缓存 tracer。插件内部用 MustRegister 注册

@@ -6,8 +6,8 @@ import (
 	"github.com/cloudwego/kitex/client"
 	klimiter "github.com/cloudwego/kitex/pkg/limiter"
 	"github.com/cloudwego/kitex/server"
+	"github.com/oekit/metrics/resilience"
 	prom "github.com/prometheus/client_golang/prometheus"
-	"github.com/yi-nology/ekit-metrics/resilience"
 )
 
 // ClientSuite 聚合 Kitex 客户端治理选项（retry + rpc_timeout + circuit_breaker）。

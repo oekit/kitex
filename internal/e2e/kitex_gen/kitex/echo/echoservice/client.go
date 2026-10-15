@@ -6,7 +6,7 @@ import (
 	"context"
 	client "github.com/cloudwego/kitex/client"
 	callopt "github.com/cloudwego/kitex/client/callopt"
-	echo "github.com/yi-nology/ekit-kitex/internal/e2e/kitex_gen/kitex/echo"
+	echo "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo"
 )
 
 // Client is designed to provide IDL-compatible methods with call-option parameter for kitex framework.

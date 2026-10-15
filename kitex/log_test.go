@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/cloudwego/kitex/pkg/klog"
-	"github.com/yi-nology/ekit-logx"
-	logxhlog "github.com/yi-nology/ekit-logx/hlog"
+	"github.com/oekit/logx"
+	logxhlog "github.com/oekit/logx/hlog"
 )
 
 func TestNewLogger_ImplementsFullLogger(t *testing.T) {

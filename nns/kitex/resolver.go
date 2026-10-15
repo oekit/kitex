@@ -5,9 +5,9 @@ import (
 
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
-	registrykitex "github.com/yi-nology/ekit-kitex/registry/kitex"
-	nnsclient "github.com/yi-nology/ekit-nns/nns/client"
-	"github.com/yi-nology/ekit-registry/registry/sdbridge"
+	registrykitex "github.com/oekit/kitex/registry/kitex"
+	nnsclient "github.com/oekit/nns/nns/client"
+	"github.com/oekit/registry/registry/sdbridge"
 )
 
 const resolverName = "nns-kitex"

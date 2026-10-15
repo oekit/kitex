@@ -10,8 +10,8 @@
 //
 // 集成方式(在 ekit 服务中):
 //
-//	import "github.com/yi-nology/ekit-tracing"
-//	import kitexotel "github.com/yi-nology/ekit-kitex/observability/tracing/instrumentation/kitexotel"
+//	import "github.com/oekit/tracing"
+//	import kitexotel "github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel"
 //
 //	func main() {
 //	    // 1. 初始化全局 OTel tracer + propagator

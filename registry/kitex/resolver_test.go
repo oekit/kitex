@@ -8,8 +8,8 @@ import (
 
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
-	"github.com/yi-nology/ekit-registry/registry"
-	registrymocks "github.com/yi-nology/ekit-registry/registrymocks"
+	"github.com/oekit/registry/registry"
+	registrymocks "github.com/oekit/registry/registrymocks"
 )
 
 type mockEndpointInfo struct {
