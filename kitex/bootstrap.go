@@ -43,7 +43,8 @@ var srvLog = logx.Delegating("kitex")
 //
 // 使用方式（在 bootstrap.Run 的 userFn 内）：
 //
-//	bootstrap.Run(cfg, func(app *bootstrap.App) error {
+//	b, _ := bootstrap.New(bootstrap.WithServiceName("svc")) // + nacos/obs WithXxx 按需注入
+//	b.Run(func(app *bootstrap.App) error {
 //	    svr := echo.NewServer(new(Impl),
 //	        server.WithRegistry(kitex.NewRegistry(reg)),
 //	        server.WithServiceAddr(addr.NewNetAddr("tcp", ":9090")),
