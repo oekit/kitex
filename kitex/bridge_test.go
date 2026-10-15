@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 
-	ekiterr "github.com/oekit/errors"
+	ekiterr "github.com/oekit/pkg/errors"
 )
 
 // invokeMiddleware 调起 bizErrorBridgeMWBuilder,直接构造 Middleware

@@ -29,7 +29,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	ekiterrors "github.com/oekit/errors"
+	ekiterrors "github.com/oekit/pkg/errors"
 	"github.com/oekit/kitex/kitex/kitexmeta"
 	kitexotel "github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel"
 
