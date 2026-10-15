@@ -14,17 +14,34 @@
 go get github.com/oekit/kitex@v0.3.8
 ```
 
-## 快速使用
+## 能做什么
 
+- **klog 桥接**：框架日志 → logx，caller 归属已修正
+- **治理热更**：GovernanceConfig 监听 Nacos，retry/timeout/CB/limiter 全量同步
+- **BizError 桥接**：对端业务异常自动转本地 BizError（504/503/403 码表）
+- **可观测**：NewServerTracingSuite（OTel）+ kitexprom 方法级指标
+- **panic 防线**：handler panic 结构化日志 + 内部 goroutine 兜底
+- **kitexmeta**：trace_id + 业务 metainfo 跨 RPC 透传（TTHeader）
+
+## 使用示例
+
+### Server + Client 全家
 ```go
-import (
-    ekitkitex "github.com/oekit/kitex/kitex"
-)
-
-svr := echo.NewServer(handler, server.WithSuite(ekitkitex.NewServerTracingSuite()))
+svr := echo.NewServer(handler,
+    server.WithSuite(ekitkitex.NewServerTracingSuite()),
+    server.WithMiddleware(ekitkitex.NewPanicLogMiddleware()))
 ekitkitex.RunServer(app, "echo-service", svr)
+
+gov, _ := ekitkitex.NewGovernanceConfig(configCli, ekitkitex.WithGovernanceGroup("my-svc"))
+cli := echo.NewClient("server-svc",
+    client.WithSuite(ekitkitex.NewClientSuite("client-svc", "server-svc", gov,
+        ekitkitex.WithRetry(), ekitkitex.WithRPCTimeout(), ekitkitex.WithCircuitBreaker())),
+    ekitkitex.WithBizErrorBridge(),
+    kitexmeta.PropagateClientOption(),
+)
 ```
 
+> ⚠️ **治理三条纪律**：① 全量同步语义（删除配置段=回退默认）；② 勿混用代码级 WithFailureRetry；③ timeout_ms 必须 >0。
 ## 包清单
 
 - \`kitex/\` — klog→logx 桥接、GovernanceConfig（Nacos 热更）、RunServer、WithBizErrorBridge、PanicLogMiddleware、NewServerTracingSuite
