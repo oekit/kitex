@@ -10,7 +10,7 @@
 ## 安装
 
 ```bash
-go get github.com/oekit/kitex@v0.3.4
+go get github.com/oekit/kitex@v0.3.8
 ```
 
 ## 包清单
