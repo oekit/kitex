@@ -38,7 +38,8 @@ var panicLog = logx.Delegating("kitex-panic")
 //
 // 用法(在 bootstrap.Run userFn 内,kitex.RunServer 之前):
 //
-//	bootstrap.Run(cfg, func(app *bootstrap.App) error {
+//	b, _ := bootstrap.New(bootstrap.WithServiceName("svc")) // + nacos/obs WithXxx 按需注入
+//	b.Run(func(app *bootstrap.App) error {
 //	    ekitkitex.SetDefaultPanicHandler()
 //	    svr := echo.NewServer(new(Impl), ...)
 //	    ekitkitex.RunServer(app, "kitex-echo", svr)
