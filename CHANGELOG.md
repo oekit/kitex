@@ -3,6 +3,19 @@
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
 
+
+
+## [v0.4.1] — 2026-10-16
+
+- **回退 v0.4.0 的更名**：恢复模块名 `github.com/oekit/kitex` 与原目录结构
+  （`kitex/` 核心子包、package kitex；kitexmeta 回到 `kitex/` 下层）。
+  v0.4.0（kitexx 路径）发布数小时内回退，无存量消费方
+
+## [v0.3.11] — 2026-10-16
+
+- ⚠️ 旧路径最后版本：模块已更名为 github.com/oekit/kitexx（v0.4.0 起使用新路径）；
+  本版本代码与 v0.3.10 完全一致，仅 README 挂弃用通告
+
 ## [v0.3.10] — 2026-10-16
 
 - **refactor**：klog→logx 日志桥接（`kitex.NewLogger`）迁至
