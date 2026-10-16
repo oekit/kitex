@@ -16,6 +16,5 @@ func TestNewLogger_AliasDelegates(t *testing.T) {
 	}
 	//nolint:staticcheck // 显式 interface compliance check，省略 type 后断言失去意义 (QF1011)
 	var _ klog.FullLogger = logger
-	//nolint:staticcheck // 同上：Control 契约（SetLevel/SetOutput）
-	var _ klog.Control = logger
+	var _ klog.Control = logger // Control 契约（SetLevel/SetOutput）
 }
