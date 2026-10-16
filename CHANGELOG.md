@@ -5,6 +5,14 @@
 
 
 
+## [v0.5.0] — 2026-10-16
+
+### Added
+- 收编 `github.com/oekit/istio` 微库为本仓子包 `istio/`：Kitex xDS 动态熔断
+  （Proxyless 对接 Istio，`InitXDS`/`NewXDSClientOption`），新增依赖
+  `github.com/kitex-contrib/xds v0.4.2`；原独立微库同步退役，迁移方式：
+  `github.com/oekit/istio` → `github.com/oekit/kitex/istio`（包名不变）
+
 ## [v0.4.1] — 2026-10-16
 
 - **回退 v0.4.0 的更名**：恢复模块名 `github.com/oekit/kitex` 与原目录结构

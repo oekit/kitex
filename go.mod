@@ -10,6 +10,7 @@ require (
 	github.com/kitex-contrib/monitor-prometheus v0.2.0
 	github.com/kitex-contrib/obs-opentelemetry v0.3.0
 	github.com/kitex-contrib/resolver-dns v0.1.0
+	github.com/kitex-contrib/xds v0.4.2
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507
 	github.com/oekit/bootstrap v0.4.1
 	github.com/oekit/concurrency v0.1.5
@@ -24,7 +25,17 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 )
 
-require go.opentelemetry.io/otel/log v1.47.0 // indirect
+require (
+	cel.dev/expr v0.25.1 // indirect
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
+	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
+	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
+	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260120221211-b8f7ae30c516 // indirect
+)
 
 require (
 	github.com/alibabacloud-go/alibabacloud-gateway-pop v0.0.6 // indirect
