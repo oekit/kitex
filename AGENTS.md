@@ -1,7 +1,7 @@
 # AGENTS.md — oekit/kitex
 
 > Kitex 生态——klog 桥接、GovernanceConfig 治理热更、RunServer、WithBizErrorBridge、kitexmeta 透传、registry/kitex + nns/kitex + kitexprom + kitexotel
-> 当前版本：`v0.3.10` · module：`github.com/oekit/kitex` · org：[oekit = Open Easy Kit](https://oekit.github.io)
+> 当前版本：`v0.4.1` · module：`github.com/oekit/kitex` · org：[oekit = Open Easy Kit](https://oekit.github.io)
 
 ## 本仓包含
 `internal/e2e/kitex_gen/kitex/echo/`、`internal/e2e/kitex_gen/kitex/echo/echoservice/`、`kitex/`、`kitex/kitexmeta/`、`nns/kitex/`、`observability/metrics/instrumentation/kitexprom/`、`observability/tracing/instrumentation/kitexotel/`、`registry/kitex/`
