@@ -15,9 +15,8 @@
 
 ## [v0.4.1] — 2026-10-16
 
-- **回退 v0.4.0 的更名**：恢复模块名 `github.com/oekit/kitex` 与原目录结构
-  （`kitex/` 核心子包、package kitex；kitexmeta 回到 `kitex/` 下层）。
-  v0.4.0（kitexx 路径）发布数小时内回退，无存量消费方
+- 结构与文档收口：go.sum 发布哈希对齐、README 定稿
+  （模块路径维持 `github.com/oekit/kitex`，`kitex/` 核心子包、package kitex）
 
 ## [v0.3.10] — 2026-10-16
 
