@@ -2,8 +2,9 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.5.1] — 2026-10-17
 
-
+- bootstrap 结构重置对齐（v0.5.0 起包提升至模块根）：`kitex/kitex/suite_test.go` 的 import 由旧路径 `github.com/oekit/bootstrap/bootstrap` 改为模块根；依赖地板 bootstrap v0.4.1 → v0.5.0（旧版本 tag 已随结构重置清空）
 
 ## [v0.5.0] — 2026-10-16
 

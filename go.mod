@@ -12,7 +12,7 @@ require (
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/kitex-contrib/xds v0.4.2
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507
-	github.com/oekit/bootstrap v0.4.1
+	github.com/oekit/bootstrap v0.5.0
 	github.com/oekit/concurrency v0.1.5
 	github.com/oekit/core v0.3.3
 	github.com/oekit/logx v0.2.0

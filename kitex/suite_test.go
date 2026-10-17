@@ -6,7 +6,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/common/test/assert"
 	"github.com/cloudwego/kitex/server"
-	"github.com/oekit/bootstrap/bootstrap"
+	"github.com/oekit/bootstrap"
 	"github.com/oekit/logx/shutdown"
 )
 
