@@ -7,8 +7,8 @@ import (
 
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
 	registrykitex "github.com/oekit/kitex/registry/kitex"
-	nnsclient "github.com/oekit/nns/nns/client"
-	"github.com/oekit/registry/registry"
+	nnsclient "github.com/oekit/nns/client"
+	"github.com/oekit/registry"
 	registrymocks "github.com/oekit/registry/registrymocks"
 )
 

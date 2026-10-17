@@ -6,8 +6,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -204,4 +206,90 @@ func runServerGodoc(t *testing.T) string {
 	}
 	t.Fatal("RunServer func decl not found in bootstrap.go")
 	return ""
+}
+
+// TestRunServer_ReadyProbePassed 钉住探活通过路径：WithReadyAddr 可建连后
+// onReady 被执行。
+func TestRunServer_ReadyProbePassed(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	fa := newFakeApp()
+	svr := &fakeServer{}
+
+	var readyCalled atomic.Int64
+	RunServer(fa, "test-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyAddr(ln.Addr().String()),
+		WithReadyProbeTimeout(2*time.Second))
+
+	deadline := time.After(3 * time.Second)
+	for readyCalled.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("onReady not called within deadline")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if len(fa.closers) != 1 {
+		t.Fatalf("closers = %v", fa.closers)
+	}
+}
+
+// TestRunServer_ReadyProbeTimeout 钉住探活超时路径：按启动失败处理
+// （RequestShutdown）。
+func TestRunServer_ReadyProbeTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close() // 确定不可建连
+
+	fa := newFakeApp()
+	svr := &fakeServer{}
+
+	var readyCalled atomic.Int64
+	RunServer(fa, "test-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyAddr(addr),
+		WithReadyProbeTimeout(300*time.Millisecond))
+
+	select {
+	case <-fa.requestedCh:
+		// 已按启动失败请求关机
+	case <-time.After(3 * time.Second):
+		t.Fatal("probe timeout did not request shutdown")
+	}
+	if readyCalled.Load() != 0 {
+		t.Fatal("onReady should not be called on probe timeout")
+	}
+}
+
+// TestRunServer_NoProbeAddr_FiresBeforeRun 钉住无探活目标路径：
+// onReady 在 Run 前同步执行。
+func TestRunServer_NoProbeAddr_FiresBeforeRun(t *testing.T) {
+	fa := newFakeApp()
+	svr := &fakeServer{}
+
+	var readyCalled atomic.Int64
+	RunServer(fa, "test-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }))
+
+	deadline := time.After(3 * time.Second)
+	for readyCalled.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("onReady not called within deadline")
+		case <-fa.requestedCh:
+			t.Fatal("no-probe path should not request shutdown")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if got := readyCalled.Load(); got != 1 {
+		t.Fatalf("onReady called %d times, want 1", got)
+	}
 }

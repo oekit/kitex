@@ -6,8 +6,8 @@ import (
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	registrykitex "github.com/oekit/kitex/registry/kitex"
-	nnsclient "github.com/oekit/nns/nns/client"
-	"github.com/oekit/registry/registry/sdbridge"
+	nnsclient "github.com/oekit/nns/client"
+	"github.com/oekit/registry/sdbridge"
 )
 
 const resolverName = "nns-kitex"

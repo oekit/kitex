@@ -10,8 +10,8 @@ import (
 	"github.com/cloudwego/kitex/pkg/registry"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 
-	nnsclient "github.com/oekit/nns/nns/client"
-	regpkg "github.com/oekit/registry/registry"
+	nnsclient "github.com/oekit/nns/client"
+	regpkg "github.com/oekit/registry"
 	registrymocks "github.com/oekit/registry/registrymocks"
 )
 

@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
-	nnsclient "github.com/oekit/nns/nns/client"
-	"github.com/oekit/registry/registry/sdbridge"
+	nnsclient "github.com/oekit/nns/client"
+	"github.com/oekit/registry/sdbridge"
 )
 
 // nnsRegistry 包装 nns ServiceClient，实现 Kitex registry.Registry。

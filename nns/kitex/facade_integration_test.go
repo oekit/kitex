@@ -3,7 +3,7 @@ package kitex
 import (
 	"testing"
 
-	nnsfacade "github.com/oekit/nns/nns"
+	nnsfacade "github.com/oekit/nns"
 	nacospkg "github.com/oekit/registry/nacos"
 )
 

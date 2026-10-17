@@ -2,6 +2,24 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.6.0] — 2026-10-17
+
+### Breaking
+- **主包提升至模块根**：`github.com/oekit/kitex/kitex` → `github.com/oekit/kitex`、
+  `.../kitex/kitex/kitexmeta` → `.../kitex/kitexmeta`（仅移动目录与导入路径，零逻辑变化）
+
+### Added（go-kratos 对齐）
+- `transportx` 新子包：Kitex ctx → core/transport 适配（metainfo 后端；
+  ctx 盒子指针承载原地写语义，写仅影响链内读取、线上透传需调用前构造 ctx）
+- `chainmw` 新子包：core/chain 栈接入 kitex——`ToKitex`（resp/next 经 ctx 桥接，
+  出参回填与错误语义与直连一致）、`ServerContext`（metainfo 元数据注入）
+- `RunServer` 变参扩展：`WithOnReady`/`WithReadyAddr`/`WithReadyProbeTimeout`
+  （kitex 无监听就绪 introspection，探活目标必须显式给出；未指定地址时 onReady
+  在 Run 前同步执行，注册窗口毫秒级）
+
+### Changed
+- 依赖升级：registry v0.4.0 / nns v0.4.0 / core v0.7.0（前两者包提升至模块根）
+
 ## [v0.5.6] — 2026-10-17
 
 - bootstrap 地板 v0.5.2 → v0.5.3；nns 地板 v0.3.4 → v0.3.5
