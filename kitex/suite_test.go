@@ -7,11 +7,11 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/test/assert"
 	"github.com/cloudwego/kitex/server"
 	"github.com/oekit/bootstrap"
-	"github.com/oekit/logx/shutdown"
+	"github.com/oekit/core/lifecycle"
 )
 
 func TestRunServer_RegistersShutdownHook(t *testing.T) {
-	mgr := shutdown.New(100 * time.Millisecond)
+	mgr := lifecycle.New(100 * time.Millisecond)
 	app := bootstrap.NewApp(mgr)
 
 	svr := server.NewServer()
@@ -22,7 +22,7 @@ func TestRunServer_RegistersShutdownHook(t *testing.T) {
 }
 
 func TestRunServer_MultipleServers(t *testing.T) {
-	mgr := shutdown.New(100 * time.Millisecond)
+	mgr := lifecycle.New(100 * time.Millisecond)
 	app := bootstrap.NewApp(mgr)
 
 	svr1 := server.NewServer()
