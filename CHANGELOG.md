@@ -2,6 +2,12 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.6.4] — 2026-10-22
+
+- build: 矩阵依赖地板对齐——logx v0.7.0 → v0.7.1、registry v0.4.1 → v0.5.0
+  并改用嵌套模块 registry/nacos v0.1.0（registry v0.5.0 起 nacos 子包迁独立模块，
+  根仓不再提供该子包）；零代码改动，测试随依赖切到嵌套模块
+
 ## [v0.6.3] — 2026-10-19
 
 - build: 矩阵内依赖地板对齐（align_floors 不动点）：bootstrap v0.6.1 → v0.6.2、concurrency v0.5.4 → v0.17.0、core v0.7.0 → v0.9.2、logx v0.6.0 → v0.7.0、nns v0.4.1 → v0.4.2、pkg v0.11.0 → v0.15.1
