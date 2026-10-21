@@ -15,10 +15,11 @@ require (
 	github.com/oekit/bootstrap v0.6.2
 	github.com/oekit/concurrency v0.17.0
 	github.com/oekit/core v0.9.2
-	github.com/oekit/logx v0.7.0
+	github.com/oekit/logx v0.7.1
 	github.com/oekit/metrics v0.1.7
 	github.com/oekit/nns v0.4.2
-	github.com/oekit/registry v0.4.1
+	github.com/oekit/registry v0.5.0
+	github.com/oekit/registry/nacos v0.1.0
 	github.com/prometheus/client_golang v1.25.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
@@ -31,6 +32,7 @@ require (
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
+	github.com/oekit/registry/nacosimpl v0.1.0 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
