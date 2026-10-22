@@ -2,6 +2,10 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.6.5] — 2026-10-22
+
+- build(deps): logx/kitexlog 地板 v0.1.1 → v0.1.4（父模块地板与 logx v0.7.1 对齐；零代码改动）
+
 ## [v0.6.4] — 2026-10-22
 
 - build: 矩阵依赖地板对齐——logx v0.7.0 → v0.7.1、registry v0.4.1 → v0.5.0
