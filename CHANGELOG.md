@@ -91,6 +91,28 @@
   `kitexlog` 成为目标模块（import 路径不变）；两 tag（`v0.2.0`/`kitexlog/v0.1.0`）
   推送后 CI 方可拉取，本地开发经 go.work replace 解析
 
+> **ℹ️ 本版本的 tag 发布时刻晚于同线的 `v0.4.1`**（`v0.3.10` 的 tag 于
+> **2026-10-16 08:39:16 +0800** 推送，而 `v0.4.1` 的 tag 早在 **10-15 16:48:56**）
+> ——**版本号在发布时间线上回退**。本版本内容属主线序列（见上），但远端
+> 「按发布时刻排序」与「按版本号排序」不一致。事实声明见
+> [oekit/kitex#33](https://github.com/oekit/kitex/issues/33)；跨仓门禁口径见
+> [oekit/matrix-tools#88](https://github.com/oekit/matrix-tools/issues/88)。
+
+## [v0.3.9] — 2026-10-15
+
+- build: 最低 Go 版本 1.26（依赖相应调整；CI/lint 同步）——对应提交 `97617cb`
+  「build: 最低 Go 版本降至 1.26（依赖相应调整；CI/lint 同步）」
+
+> **⚠️ 本版本的 tag 发布于 2026-10-15 19:32:06 +0800，晚于同线的 `v0.4.1`
+> （10-15 16:48:56）2h43m** ——**版本号在发布时间线上回退**。
+> 本版本此前**没有 CHANGELOG 版本节**（本节为 2026-10-23 补齐）：tag 早已发布，
+> GitHub Release 在，Go module proxy 上可解析 ⇒ **保留不删**（删 tag / 重推 =
+> 已缓存消费方集体中毒）。
+> **当前请使用主线版本**（`v0.6.5+`）。注意 `v0.6.0` 起「主包提升至模块根」
+> （`github.com/oekit/kitex/kitex` → `github.com/oekit/kitex`），本版本仍是旧的
+> 双层布局。事实声明见 [oekit/kitex#33](https://github.com/oekit/kitex/issues/33)；
+> 跨仓门禁口径见 [oekit/matrix-tools#88](https://github.com/oekit/matrix-tools/issues/88)。
+
 ## [v0.1.0] — 2026-10-15
 
 自 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来的初始公开版本，完成拆分稳定化：模块路径统一为 `github.com/oekit/kitex`，多轮拆分/合并收敛至当前模块边界，组织基建（共享 CI workflow、golangci v2、Dependabot）就位。
