@@ -17,6 +17,7 @@ import (
 	"github.com/cloudwego/kitex/server"
 	"github.com/oekit/concurrency/async"
 	"github.com/oekit/core/lifecycle"
+	echoservice "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo/echoservice"
 )
 
 // fakeServer 是 server.Server 的最小测试实现：允许测试编程 Run/Stop 的返回行为。
@@ -208,39 +209,107 @@ func runServerGodoc(t *testing.T) string {
 	return ""
 }
 
-// TestRunServer_ReadyProbePassed 钉住探活通过路径：WithReadyAddr 可建连后
-// onReady 被执行。
-func TestRunServer_ReadyProbePassed(t *testing.T) {
+// TestRunServer_ReadyProbe_RealServerBindsPort 是 #38 的回归用例：探活目标
+// 由 **server 自己绑定**（端口在 svr.Run() 内部才绑定）时，就绪回调必须触发，
+// 且端口真的在监听。
+//
+// 旧实现把探活放在 svr.Run() **之前** ⇒ 必然 connection refused ⇒ 探活超时
+// ⇒ RequestShutdown ⇒ svr.Run() 从未被调用 ⇒ server 根本不起（与 hertz #43
+// 同型）。本用例用真实 kitex server（echoservice）+ 真实端口，钉住
+// 「就绪回调触发 + 端口在监听 + 未请求关机」三条。
+func TestRunServer_ReadyProbe_RealServerBindsPort(t *testing.T) {
+	addr := reserveLoopbackAddr(t)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		t.Fatalf("resolve addr: %v", err)
+	}
+
+	fa := newFakeApp()
+	svr := echoservice.NewServer(&echoHandler{},
+		server.WithServiceAddr(tcpAddr),
+		server.WithExitWaitTime(200*time.Millisecond), // 测试快速排空
+	)
+	t.Cleanup(func() { _ = svr.Stop() })
+
+	var readyCalled atomic.Int64
+	RunServer(fa, "probe-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyAddr(addr),
+		WithReadyProbeTimeout(5*time.Second))
+
+	deadline := time.After(10 * time.Second)
+	for readyCalled.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("onReady not called within deadline (server never became ready)")
+		case <-fa.requestedCh:
+			t.Fatal("server requested shutdown before becoming ready")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+
+	// 核心断言：端口真的在监听（旧实现下端口从不监听）。
+	c, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		t.Fatalf("server port %s is not listening: %v", addr, err)
+	}
+	_ = c.Close()
+
+	if len(fa.closers) != 1 {
+		t.Fatalf("closers = %v", fa.closers)
+	}
+	fa.cancel()
+}
+
+// TestRunServer_ReadyProbe_PortOwnedByOther_NoReady 钉住 #38 的第三条守则：
+// 探活目标端口被**他人**占用时，本进程 server 必然绑定失败 ⇒ 不得回调
+// onReady（否则把不属于自己的实例注册到注册中心），且按启动失败请求关机。
+func TestRunServer_ReadyProbe_PortOwnedByOther_NoReady(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = ln.Close() }()
+	defer func() { _ = ln.Close() }() // 持续占用该端口（模拟他人监听）
+	addr := ln.Addr().String()
 
 	fa := newFakeApp()
 	svr := &fakeServer{}
 
 	var readyCalled atomic.Int64
-	RunServer(fa, "test-svc", svr,
+	RunServer(fa, "busy-svc", svr,
 		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
-		WithReadyAddr(ln.Addr().String()),
+		WithReadyAddr(addr),
 		WithReadyProbeTimeout(2*time.Second))
 
-	deadline := time.After(3 * time.Second)
-	for readyCalled.Load() == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("onReady not called within deadline")
-		case <-time.After(10 * time.Millisecond):
-		}
+	select {
+	case <-fa.requestedCh:
+		// 按启动失败请求关机，符合预期
+	case <-time.After(5 * time.Second):
+		t.Fatal("probe target owned by another process did not request shutdown")
 	}
-	if len(fa.closers) != 1 {
-		t.Fatalf("closers = %v", fa.closers)
+	if readyCalled.Load() != 0 {
+		t.Fatal("onReady must not fire when the probe target port is owned by another process")
 	}
+	fa.cancel()
+}
+
+// reserveLoopbackAddr 取一个空闲的回环端口号（先 listen 再释放），供真实
+// server 绑定 —— 与 e2e startE2EServer 同口径。
+func reserveLoopbackAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	return addr
 }
 
 // TestRunServer_ReadyProbeTimeout 钉住探活超时路径：按启动失败处理
-// （RequestShutdown）。
+// （RequestShutdown）。fake server 的 Run 必须**阻塞**（真实 server 的
+// Run 会一直阻塞到 server 退出）——否则 GoBackground 提前返回会把探活
+// 一并中止，走的是「server 退出」分支而非超时分支。
 func TestRunServer_ReadyProbeTimeout(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -250,7 +319,14 @@ func TestRunServer_ReadyProbeTimeout(t *testing.T) {
 	_ = ln.Close() // 确定不可建连
 
 	fa := newFakeApp()
-	svr := &fakeServer{}
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	svr := &fakeServer{
+		runFunc: func() error {
+			<-stop
+			return nil
+		},
+	}
 
 	var readyCalled atomic.Int64
 	RunServer(fa, "test-svc", svr,
@@ -267,6 +343,7 @@ func TestRunServer_ReadyProbeTimeout(t *testing.T) {
 	if readyCalled.Load() != 0 {
 		t.Fatal("onReady should not be called on probe timeout")
 	}
+	fa.cancel()
 }
 
 // TestRunServer_NoProbeAddr_FiresBeforeRun 钉住无探活目标路径：
