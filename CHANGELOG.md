@@ -2,6 +2,18 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [observability/tracing/instrumentation/kitexotel/v0.1.0] — 2026-10-24
+
+- **BREAKING**: 根模块依赖面断开 apache/thrift v0.16.0——kitexotel 与 istio 拆成嵌套模块（import 路径不变），根包 NewServerTracingSuite / NewClientTracingSuite 迁至 kitexotel；下游选到的 thrift 回到 v0.13.0（#37）
+
+## [istio/v0.1.0] — 2026-10-24
+
+- **BREAKING**: 根模块依赖面断开 apache/thrift v0.16.0——kitexotel 与 istio 拆成嵌套模块（import 路径不变），根包 NewServerTracingSuite / NewClientTracingSuite 迁至 kitexotel；下游选到的 thrift 回到 v0.13.0（#37）
+
+## [v0.7.0] — 2026-10-24
+
+- **BREAKING**: 根模块依赖面断开 apache/thrift v0.16.0——kitexotel 与 istio 拆成嵌套模块（import 路径不变），根包 NewServerTracingSuite / NewClientTracingSuite 迁至 kitexotel；下游选到的 thrift 回到 v0.13.0（#37）
+
 ## [v0.6.6] — 2026-10-23
 
 - docs: 补 v0.3.9 / v0.3.10 发布序回退的事实声明，并补齐 v0.3.9 缺失的版本节——当前请用主线版本 v0.6.5+（#33）
