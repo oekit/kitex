@@ -1,4 +1,4 @@
-package kitex
+package kitexotel
 
 // 跨包 e2e 集成测试(audit 5.3 闭环):真实 kitex server+client 走完整
 // transport 链,验证此前只有单测覆盖的三条链路:
@@ -29,8 +29,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/oekit/kitex"
 	"github.com/oekit/kitex/kitexmeta"
-	kitexotel "github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel"
 	ekiterrors "github.com/oekit/pkg/errors"
 
 	echo "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo"
@@ -147,7 +147,7 @@ func TestE2E_OTelTraceparentPropagation(t *testing.T) {
 	)
 
 	opts := append([]client.Option{client.WithHostPorts(addr)},
-		kitexotel.NewTracingClientOptions()...)
+		NewTracingClientOptions()...)
 	cli, err := echoservice.NewClient("e2e-echo", opts...)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
@@ -187,7 +187,7 @@ func TestE2E_BizErrorBridge(t *testing.T) {
 		}))
 
 	cli, err := echoservice.NewClient("e2e-echo",
-		client.WithHostPorts(addr), WithBizErrorBridge())
+		client.WithHostPorts(addr), kitex.WithBizErrorBridge())
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
