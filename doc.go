@@ -4,7 +4,11 @@
 //
 //   - 日志桥接：将 Kitex klog 接管到 ekit [logx]——已迁 github.com/oekit/logx/kitexlog
 //     （kitexlog.NewLogger）；本包保留 [NewLogger] Deprecated 别名委托，行为一致。
-//   - 可观测性：Kitex OpenTelemetry tracing/metrics 一键接入（见 [NewServerTracingSuite]、[NewClientTracingSuite]）。
+//   - 可观测性：Kitex OpenTelemetry tracing/metrics 一键接入——**已迁嵌套模块**
+//     github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel
+//     （kitexotel.NewServerTracingSuite / kitexotel.NewClientTracingSuite）。
+//     v0.7.0 起本包不再持有该能力：obs-opentelemetry 会把 apache/thrift 抬到
+//     v0.16.0，留在根模块会打断下游按 thrift 0.13 生成的 Thrift 代码（#37）。
 //   - 治理配置：从 Nacos 配置中心加载 retry/rpc_timeout/circuit_breaker/limiter 策略并热更新（见 [NewGovernanceConfig]）。
 //   - Suite 聚合：以 Kitex [client.Suite]/[server.Suite] 形式聚合治理选项（见 [NewClientSuite]、[NewServerSuite]）。
 //   - 启动辅助：与 ekit [bootstrap.App] 集成的生命周期管理（见 [RunServer]）。
@@ -15,9 +19,9 @@
 //	klog.SetLogger(kitexlog.NewLogger(logx.NewSlogLogger("my-rpc")))
 //	//    或 Deprecated 别名：klog.SetLogger(kitex.NewLogger(logx.NewSlogLogger("my-rpc")))
 //
-//	// 2. 可观测性（需先调用 tracing.Init）
+//	// 2. 可观测性（需先调用 tracing.Init；v0.7.0 起随嵌套模块 kitexotel 提供）
 //	svr := echo.NewServer(new(Impl),
-//	    server.WithSuite(kitex.NewServerTracingSuite()),
+//	    server.WithSuite(kitexotel.NewServerTracingSuite()),
 //	)
 //
 //	// 3. 治理配置（需 Nacos config client）

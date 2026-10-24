@@ -475,23 +475,10 @@ func TestGovernance_SubscribeFailure_LogsAndReturns(t *testing.T) {
 }
 
 // --- observability.go ---
-
-// TestNewServerTracingSuite covers the constructor (no panic).
-// Full OTel behavior is integration-test territory.
-func TestNewServerTracingSuite(t *testing.T) {
-	s := NewServerTracingSuite()
-	if s == nil {
-		t.Fatal("expected non-nil server.Suite")
-	}
-}
-
-// TestNewClientTracingSuite covers the constructor (no panic).
-func TestNewClientTracingSuite(t *testing.T) {
-	s := NewClientTracingSuite()
-	if s == nil {
-		t.Fatal("expected non-nil client.Suite")
-	}
-}
+// ⚠️ v0.7.0 起 NewServerTracingSuite / NewClientTracingSuite 随嵌套模块
+// kitexotel 迁出根包（根包依赖面不得含 apache/thrift v0.16.0，#37）——
+// 对应构造器测试随之迁至
+// observability/tracing/instrumentation/kitexotel/tracing_suite_test.go。
 
 // --- log.go: SetOutput 覆盖随实现迁至 logx/kitexlog（kitexlog.TestKclogAdapter_SetOutput_NoOp） ---
 

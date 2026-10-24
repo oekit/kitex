@@ -42,7 +42,7 @@ import (
 // 用 server.Suite interface 包一层,业务不能直接转回 *serverSuite;
 // 业务用 server.WithSuite() 接受。
 func NewServerSuite(opts ...ServerOption) server.Suite {
-	return kitexoteltracing.NewServerSuite(opts...)
+	return NewServerTracingSuite(opts...)
 }
 
 // NewTracingServerOptions 把 NewServerSuite 包装成 []server.Option,

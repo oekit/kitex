@@ -17,20 +17,31 @@ go get github.com/oekit/kitex@v0.6.6
 `NewGovernanceConfig` 治理配置热更（retry/rpc_timeout/circuit_breaker/limiter，全量同步语义）、
 `ClientSuite`/`ServerSuite` 一键装配、`RunServer` 接 bootstrap 优雅退出、`WithBizErrorBridge`
 对端业务异常→ekit BizError 桥接、`NewPanicLogMiddleware`/`SetDefaultPanicHandler` panic 收编；
-子包 `nns/kitex` 与 `registry/kitex`（注册发现）、`observability`（kitexprom 方法级指标、
-kitexotel 链路）、`kitexmeta`（trace_id/业务元信息跨 RPC 透传）、`istio/`（xDS 动态熔断，
+子包 `nns/kitex` 与 `registry/kitex`（注册发现）、`observability`（kitexprom 方法级指标）、
+`kitexmeta`（trace_id/业务元信息跨 RPC 透传）；**嵌套模块**（独立发版、依赖隔离）：
+`observability/tracing/instrumentation/kitexotel`（OTel 链路接入）、`istio`（xDS 动态熔断，
 Proxyless 对接 Istio，原独立微库已收编）。
+
+> ⚠️ v0.7.0 起 `kitexotel` 与 `istio` 拆为**嵌套模块**：obs-opentelemetry / xds 会把
+> apache/thrift 抬到 v0.16.0，留在根模块会打断下游按 thrift 0.13 生成的 Thrift 代码
+> （#37）。需要它们时单独 `go get`（import 路径不变）：
+
+```bash
+go get github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel@latest  # OTel 链路
+go get github.com/oekit/kitex/istio@latest                                           # xDS 动态熔断
+```
 
 ## 快速使用
 
 ```go
 import (
     ekitkitex "github.com/oekit/kitex"
+    kitexotel "github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel"
     "github.com/cloudwego/kitex/server"
 )
 
 svr := echo.NewServer(handler,
-    server.WithSuite(ekitkitex.NewServerTracingSuite()),
+    server.WithSuite(kitexotel.NewServerTracingSuite()),
 )
 ekitkitex.RunServer(app, "kitex-echo", svr) // 接 bootstrap 生命周期，优雅退出
 ```

@@ -4,7 +4,22 @@
 > 当前版本：`v0.6.6` · module：`github.com/oekit/kitex` · org：[oekit = Open Easy Kit](https://oekit.github.io)
 
 ## 本仓包含
-`./`、`chainmw/`、`internal/e2e/kitex_gen/kitex/echo/`、`internal/e2e/kitex_gen/kitex/echo/echoservice/`、`istio/`、`kitexmeta/`、`nns/kitex/`、`observability/metrics/instrumentation/kitexprom/`、`observability/tracing/instrumentation/kitexotel/`、`registry/kitex/`、`transportx/`
+`./`、`chainmw/`、`internal/e2e/kitex_gen/kitex/echo/`、`internal/e2e/kitex_gen/kitex/echo/echoservice/`、`kitexmeta/`、`nns/kitex/`、`observability/metrics/instrumentation/kitexprom/`、`registry/kitex/`、`transportx/`
+
+### 嵌套模块（独立发版 · 依赖隔离，v0.7.0 起）
+- `observability/tracing/instrumentation/kitexotel/` → module `github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel`
+- `istio/` → module `github.com/oekit/kitex/istio`
+
+**为什么拆**：obs-opentelemetry / xds 的 go.mod 把 `apache/thrift` 抬到 v0.16.0，
+而 thrift v0.16 的协议方法多了 `context.Context` 首参 ⇒ 留在根模块时，**任何
+`import github.com/oekit/kitex` 的下游**都被 MVS 抬到 thrift v0.16.0，按 thrift 0.13
+生成的 Thrift 代码大面积编译不过（#37）。降版本解不开（obs v0.2.4+ / xds v0.3.0+ 全部
+抬 thrift v0.16.0，且旧版对应的 kitex 生态停在 v0.5–v0.7）⇒ 只有隔离一条路。
+
+**红线**：根模块**不得**再引 obs-opentelemetry / xds / apache-thrift——包括**测试**
+（根仓测试引 kitexotel 会把重依赖拖回根模块的依赖面）。需要这两个能力的下游
+显式 `go get` 对应嵌套模块（import 路径不变）。
+
 
 ## 硬规则速览（全矩阵适用）
 
