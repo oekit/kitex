@@ -5,7 +5,7 @@
 ## [observability/tracing/instrumentation/kitexotel/v0.7.0] — 2026-10-24
 
 - fix: 嵌套模块版本与根模块**锁步发布**（v0.1.0 → v0.7.0）——v0.1.0 撞上根模块**改名前**
-  （`github.com/yi-nology/ekit-kitex`）的历史版本号，代理上那几版的 `.mod` 仍声明旧模块
+  （旧模块路径，原文见 #44）的历史版本号，代理上那几版的 `.mod` 仍声明旧模块
   路径；Go 解析嵌套模块路径时按同一版本号探测父模块前缀候选，命中脏条目即**硬失败**
   （`module declares its path as ... but was required as ...`）⇒ 消费方首次 `go get`
   间歇性失败（#44）。改用与根模块同号的版本后，父模块前缀候选落在声明正确的版本上，
