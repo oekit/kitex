@@ -33,7 +33,7 @@ go get github.com/oekit/kitex/istio@latest                                      
 
 > ⚠️ **嵌套模块版本与根模块锁步**（v0.7.0 起，#44）：`kitexotel` 与 `istio` 的版本号
 > 与根模块同号（根 v0.7.0 ⇒ 嵌套 v0.7.0）。原因：嵌套模块的版本号若撞上根模块
-> **改名前**（`github.com/yi-nology/ekit-kitex`）的历史版本号（v0.1.0–v0.4.0），
+> **改名前**（旧模块路径，原文见 #44）的历史版本号（v0.1.0–v0.4.0），
 > Go 解析嵌套模块路径时会按同一版本号探测父模块前缀候选，命中代理上仍缓存旧
 > 模块路径的 `.mod` 条目即**硬失败**（`module declares its path as ... but was
 > required as ...`）⇒ 消费方首次 `go get` 间歇性失败。
