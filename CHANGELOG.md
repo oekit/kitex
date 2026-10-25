@@ -2,6 +2,25 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [observability/tracing/instrumentation/kitexotel/v0.7.0] — 2026-10-24
+
+- fix: 嵌套模块版本与根模块**锁步发布**（v0.1.0 → v0.7.0）——v0.1.0 撞上根模块**改名前**
+  （`github.com/yi-nology/ekit-kitex`）的历史版本号，代理上那几版的 `.mod` 仍声明旧模块
+  路径；Go 解析嵌套模块路径时按同一版本号探测父模块前缀候选，命中脏条目即**硬失败**
+  （`module declares its path as ... but was required as ...`）⇒ 消费方首次 `go get`
+  间歇性失败（#44）。改用与根模块同号的版本后，父模块前缀候选落在声明正确的版本上，
+  无论代理缓存状态如何都能解析成功；附带收益：消费方 `go get` 不必猜该用哪个版本
+- docs: 补依赖面澄清——`kitexotel` 自身依赖 `kitex-contrib/obs-opentelemetry v0.3.0`，
+  后者仍把 `apache/thrift` 抬到 v0.16.0 ⇒ **用了 tracing suite 的下游 MVS 仍会选到
+  thrift v0.16.0**，仍需自己的 `replace github.com/apache/thrift => github.com/apache/thrift v0.13.0`
+  压住（v0.7.0 CHANGELOG 里「下游选到的 thrift 回到 v0.13.0」这句只对**不引嵌套模块**的
+  下游成立）（#44）
+
+## [istio/v0.7.0] — 2026-10-24
+
+- fix: 嵌套模块版本与根模块**锁步发布**（v0.1.0 → v0.7.0）——与 `kitexotel` 同因：
+  v0.1.0 撞上根模块改名前的历史版本号，消费方首次 `go get` 间歇性硬失败（#44）
+
 ## [observability/tracing/instrumentation/kitexotel/v0.1.0] — 2026-10-24
 
 - **BREAKING**: 根模块依赖面断开 apache/thrift v0.16.0——kitexotel 与 istio 拆成嵌套模块（import 路径不变），根包 NewServerTracingSuite / NewClientTracingSuite 迁至 kitexotel；下游选到的 thrift 回到 v0.13.0（#37）
