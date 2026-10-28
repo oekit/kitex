@@ -24,7 +24,7 @@ require (
 	github.com/cloudwego/kitex v0.16.4
 	github.com/kitex-contrib/obs-opentelemetry v0.3.0
 	github.com/oekit/kitex v0.7.1
-	github.com/oekit/pkg v0.15.1
+	github.com/oekit/pkg v0.28.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
