@@ -21,6 +21,18 @@ var srvLog = logx.Delegating("kitex")
 // defaultReadyProbeTimeout 是 WithOnReady 启用后的默认探活超时。
 const defaultReadyProbeTimeout = 5 * time.Second
 
+// errProbeAborted 表示探活被**正常关停**打断（不是探活失败）。
+//
+// 语义拆分：**探活失败**（启动失败 ⇒ 按失败处理、请求关机）与**探活被关停打断**
+// （正常终止 ⇒ 预期路径）是两件事。关停不是失败——调用方用 errors.Is 判定后
+// 只记一条 Info，且不再调 app.RequestShutdown()（进程本就在关停，再请求一次
+// 是多余动作；旧实现把关停记成 ERROR「ready probe failed」，值班的人会误以为
+// 服务启动失败）。
+//
+// 该错误只由 probeAndReady 在 ctx 被取消时返回；探活超时等真正的启动失败
+// 仍返回普通 error。与 hertz 侧同名哨兵对称（#48）。
+var errProbeAborted = errors.New("ready probe aborted: app shutting down")
+
 // RunServerOption 配置 RunServer 的就绪回调行为。
 type RunServerOption func(*runServerConfig)
 
@@ -163,11 +175,22 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 				probeCtx, cancelProbe := context.WithCancel(app.Context())
 				defer cancelProbe()
 				async.GoSafe(func() {
-					if err := probeAndReady(probeCtx, app, name, cfg); err != nil {
-						srvLog.Error("kitex ready probe failed, requesting shutdown",
-							"name", name, "err", err)
-						app.RequestShutdown()
+					err := probeAndReady(probeCtx, app, name, cfg)
+					if err == nil {
+						return
 					}
+					if errors.Is(err, errProbeAborted) {
+						// 正常关停打断探活（#48，与 hertz 同型）：**预期路径，
+						// 不是探活失败**。只记一条 Info，不请求关机——进程正在
+						// 关停，RequestShutdown 此刻是多余动作（旧实现此处打
+						// ERROR「ready probe failed, requesting shutdown」，
+						// 把关停误报成启动失败 ⇒ 值班误判 + 假告警）。
+						srvLog.Info("kitex ready probe aborted by shutdown", "name", name)
+						return
+					}
+					srvLog.Error("kitex ready probe failed, requesting shutdown",
+						"name", name, "err", err)
+					app.RequestShutdown()
 				})
 			}
 		}
@@ -205,6 +228,11 @@ func checkProbeAddrFree(ctx context.Context, addr string) error {
 // 探活必须与 svr.Run() 并发（#38）：监听端口是在 svr.Run() 内部才绑定的，
 // 串行先探活必然 connection refused、探活必超时、server 根本不会启动。
 // 探活期间 ctx 取消（app 关闭或 svr.Run() 返回）即中止，不触发 onReady。
+//
+// **关停与失败是两件事**（#48，与 hertz 同型）：ctx 被取消 ⇒ 探活是被正常
+// 关停打断（**预期路径**）⇒ 返回 errProbeAborted；调用方据此只记 Info，
+// 不请求关机。旧实现把关停记成 ERROR「ready probe failed」并再次
+// app.RequestShutdown() ⇒ 值班的人会误以为服务启动失败。
 func probeAndReady(ctx context.Context, app lifecycle.App, name string, cfg *runServerConfig) error {
 	timeout := cfg.probeTimeout
 	if timeout <= 0 {
@@ -220,12 +248,16 @@ func probeAndReady(ctx context.Context, app lifecycle.App, name string, cfg *run
 			cfg.onReady(app.Context())
 			return nil
 		}
+		// 关停优先于超时：ctx 已取消 ⇒ 探活是被正常关停打断，不是启动失败。
+		if ctx.Err() != nil {
+			return errProbeAborted
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("ready probe timeout after %s, addr=%s: %w", timeout, cfg.probeAddr, err)
 		}
 		select {
 		case <-ctx.Done():
-			return errors.New("ready probe aborted: app shutting down")
+			return errProbeAborted
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
