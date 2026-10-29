@@ -3,6 +3,10 @@
 由 oekit/kitex v0.7.0 拆分而来（Kitex OpenTelemetry tracing 接入独立成模块——
 obs-opentelemetry 重依赖隔离在此，kitex 根仓回归零 apache/thrift）。
 
+## [v0.7.2] — 2026-10-29
+
+- 跟随 kitex v0.7.2 发版（release_train 嵌套 train）
+
 ## [v0.7.0] — 2026-10-24
 
 - 版本与根模块**锁步**（根 v0.7.0 ⇒ 嵌套 v0.7.0）：v0.1.0 撞上根模块改名前
