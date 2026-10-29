@@ -2,6 +2,14 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [observability/tracing/instrumentation/kitexotel/v0.7.2] — 2026-10-29
+
+- build: 依赖地板对齐——concurrency 抬到 v0.23.2
+
+## [v0.7.2] — 2026-10-29
+
+- build: 依赖地板对齐——concurrency 抬到 v0.23.2
+
 ## [v0.7.1] — 2026-10-28
 
 - fix(bootstrap): 就绪探活区分「关停打断」与「探活失败」——hertz #48 的同型修法下沉
