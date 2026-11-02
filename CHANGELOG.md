@@ -76,7 +76,7 @@ kitex 侧的就绪探活**没有区分「探活失败（启动失败）」与「
 ## [v0.7.0] — 2026-10-24
 
 - **BREAKING**: 根模块依赖面断开 apache/thrift v0.16.0——kitexotel 与 istio 拆成嵌套模块（import 路径不变），根包 NewServerTracingSuite / NewClientTracingSuite 迁至 kitexotel；下游选到的 thrift 回到 v0.13.0（#37）
-- #38：fix(bootstrap): 就绪探活与 `svr.Run()` 并发化——`WithReadyAddr` 不再必然超时致 server 从不启动
+- fix(bootstrap): 就绪探活与 `svr.Run()` 并发化（#38）——`WithReadyAddr` 不再必然超时致 server 从不启动
 
 ## [v0.6.6] — 2026-10-23
 
