@@ -2,6 +2,12 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [observability/tracing/instrumentation/kitexotel/v0.7.7] — 2026-11-03
+
+- build: 把 pkg v0.32.0 的地板带进已发布产物（v0.7.6 的快照嵌的是 pkg v0.31.2，消费方解析得到却拿到旧内容）（kitex#90）
+
+关联问题单：kitex#90。
+
 ## [observability/tracing/instrumentation/kitexotel/v0.7.6] — 2026-11-03
 
 - build: 把 pkg v0.31.2、logx v0.8.2 与 logx/kitexlog v0.1.8 的地板带进已发布产物（kitexotel v0.7.5 的快照嵌的是 pkg v0.31.1、logx v0.8.0，消费方拿不到新内容）（kitex#86）
