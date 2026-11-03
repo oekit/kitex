@@ -146,6 +146,7 @@ func TestToInstance(t *testing.T) {
 	tests := []struct {
 		name          string
 		info          *kregistry.Info
+		defaultName   string
 		defaultWeight int
 		wantService   string
 		wantIP        string
@@ -172,6 +173,21 @@ func TestToInstance(t *testing.T) {
 			wantWeight:    30,
 		},
 		{
+			name:          "empty service name uses default",
+			info:          &kregistry.Info{ServiceName: "", Addr: &net.TCPAddr{IP: net.ParseIP("1.2.3.4"), Port: 9090}},
+			defaultName:   "fallback-svc",
+			defaultWeight: 10,
+			wantService:   "fallback-svc",
+			wantIP:        "1.2.3.4",
+			wantPort:      9090,
+			wantWeight:    10,
+		},
+		{
+			name:    "empty service name without default fails closed",
+			info:    &kregistry.Info{ServiceName: "", Addr: &net.TCPAddr{IP: net.ParseIP("1.2.3.4"), Port: 9090}},
+			wantErr: true,
+		},
+		{
 			name:    "nil info",
 			info:    nil,
 			wantErr: true,
@@ -185,7 +201,8 @@ func TestToInstance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inst, err := toInstance(tt.info, tt.defaultWeight)
+			r := &kitexRegistry{defaultServiceName: tt.defaultName, defaultWeight: tt.defaultWeight}
+			inst, err := r.toInstance(tt.info)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("toInstance() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -212,5 +229,46 @@ func TestGetLocalIP(t *testing.T) {
 	ip := network.GetPodIP()
 	if net.ParseIP(ip) == nil {
 		t.Errorf("GetPodIP() returned invalid IP: %q", ip)
+	}
+}
+
+// TestRegistry_Register_DefaultServiceName #93 回归:Kitex 填进
+// registry.Info.ServiceName 的值与 ServiceInfo.ServiceName 不同源,实测会是
+// 空串;WithDefaultServiceName 兜底后 Register/Deregister 不再被
+// "registry: service name is empty" 卡死(注销对称)。
+func TestRegistry_Register_DefaultServiceName(t *testing.T) {
+	mock := &registrymocks.Registrar{}
+	r := NewRegistry(mock, WithDefaultServiceName("fallback-svc"))
+
+	addr := &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 8080}
+	info := &kregistry.Info{ServiceName: "", Addr: addr}
+
+	if err := r.Register(info); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if len(mock.Registered) != 1 || mock.Registered[0].Service != "fallback-svc" {
+		t.Errorf("Registered = %+v, want Service fallback-svc", mock.Registered)
+	}
+
+	if err := r.Deregister(info); err != nil {
+		t.Fatalf("Deregister() error = %v", err)
+	}
+	if len(mock.Deregistered) != 1 || mock.Deregistered[0].Service != "fallback-svc" {
+		t.Errorf("Deregistered = %+v, want Service fallback-svc", mock.Deregistered)
+	}
+}
+
+// TestRegistry_Register_EmptyServiceName_FailClosed 空服务名且无兜底时保持
+// fail-closed(InfoFrom 的空名报错语义不变)。
+func TestRegistry_Register_EmptyServiceName_FailClosed(t *testing.T) {
+	mock := &registrymocks.Registrar{}
+	r := NewRegistry(mock)
+
+	info := &kregistry.Info{ServiceName: "", Addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 8080}}
+	if err := r.Register(info); err == nil {
+		t.Error("expected error for empty service name without fallback, got nil")
+	}
+	if err := r.Deregister(info); err == nil {
+		t.Error("expected error for empty service name without fallback, got nil")
 	}
 }
