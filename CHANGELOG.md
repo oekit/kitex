@@ -2,6 +2,14 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.7.6] — 2026-11-03
+
+- BizErrorBridge 链后收敛类型化 biz 错误，自动带 TTHeader 传输前提与双侧 meta handler，消灭 (nil,nil) 假成功（#94）
+- Register/Deregister 空服务名兜底 WithDefaultServiceName，回退 Init 声明的自身服务名（#93）
+- InstancesToKitex 发现侧 Weight<=0 回填默认权重 10（#92）
+
+关联问题单：kitex#92、kitex#93、kitex#94。
+
 ## [observability/tracing/instrumentation/kitexotel/v0.7.7] — 2026-11-03
 
 - build: 把 pkg v0.32.0 的地板带进已发布产物（v0.7.6 的快照嵌的是 pkg v0.31.2，消费方解析得到却拿到旧内容）（kitex#90）
