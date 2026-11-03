@@ -14,8 +14,9 @@ import (
 // 使用 ServiceClient 的 registrar 接口注册/注销，
 // 支持 mock 模式（registrar 为 nil 时静默跳过）。
 type nnsRegistry struct {
-	client        *nnsclient.ServiceClient
-	defaultWeight int
+	client             *nnsclient.ServiceClient
+	defaultWeight      int
+	defaultServiceName string
 }
 
 var _ kregistry.Registry = (*nnsRegistry)(nil)
@@ -26,6 +27,16 @@ type RegistryOption func(*nnsRegistry)
 // WithDefaultWeight 设置当 Kitex Info.Weight 为 0 时使用的默认权重。
 func WithDefaultWeight(w int) RegistryOption {
 	return func(r *nnsRegistry) { r.defaultWeight = w }
+}
+
+// WithDefaultServiceName 设置 registry.Info.ServiceName 为空时的兜底服务名，
+// 优先于 ServiceClient Init 声明的自身服务名。
+//
+// Kitex 填进 registry.Info.ServiceName 的值与 ServiceInfo.ServiceName 不同源，
+// 实测会是空串（#93）；不兜底则 sdbridge.ToInstance 直接报
+// "registry: service name is empty"，注册失败导致服务端进程起来就退出。
+func WithDefaultServiceName(name string) RegistryOption {
+	return func(r *nnsRegistry) { r.defaultServiceName = name }
 }
 
 // NewRegistry 创建基于 NNS ServiceClient 的 Kitex Registry。
@@ -48,8 +59,9 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 		return fmt.Errorf("nns-kitex registry: info is nil")
 	}
 
-	// weight <= 0 时使用 r.defaultWeight 兜底（委托 sdbridge.ToInstance）
-	inst, err := sdbridge.ToInstance(info.ServiceName, info.Addr, info.Weight, r.defaultWeight, info.Tags)
+	// weight <= 0 时使用 r.defaultWeight 兜底（委托 sdbridge.ToInstance）；
+	// ServiceName 为空时按 resolveServiceName 兜底（#93）
+	inst, err := sdbridge.ToInstance(r.resolveServiceName(info.ServiceName), info.Addr, info.Weight, r.defaultWeight, info.Tags)
 	if err != nil {
 		return fmt.Errorf("nns-kitex registry: %w", err)
 	}
@@ -69,14 +81,14 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 }
 
 // Deregister 从 NNS 注册中心注销 Kitex 服务实例。
-// 与 Register 对称：保留 tags 并走 defaultWeight 兜底，
+// 与 Register 对称：保留 tags、走 defaultWeight 与服务名兜底，
 // 依赖 metadata/权重匹配的注册中心才能正确注销。
 func (r *nnsRegistry) Deregister(info *kregistry.Info) error {
 	if info == nil {
 		return fmt.Errorf("nns-kitex registry: info is nil")
 	}
 
-	inst, err := sdbridge.ToInstance(info.ServiceName, info.Addr, info.Weight, r.defaultWeight, info.Tags)
+	inst, err := sdbridge.ToInstance(r.resolveServiceName(info.ServiceName), info.Addr, info.Weight, r.defaultWeight, info.Tags)
 	if err != nil {
 		return fmt.Errorf("nns-kitex registry: %w", err)
 	}
@@ -88,4 +100,22 @@ func (r *nnsRegistry) Deregister(info *kregistry.Info) error {
 		return fmt.Errorf("nns-kitex registry: registrar unavailable (degraded, not mock mode)")
 	}
 	return r.client.GetRegistrar().Deregister(context.Background(), inst)
+}
+
+// resolveServiceName 对空服务名兜底（#93）：Kitex 填进 registry.Info.ServiceName
+// 的值与 ServiceInfo.ServiceName 不同源，实测会是空串，而 sdbridge.ToInstance
+// 对空名硬报 "registry: service name is empty"（fail-closed 保留）。
+// 兜底顺序：显式 WithDefaultServiceName → ServiceClient Init 声明的自身服务名
+// （LocalServiceInit 记录，经 GetLocalService 可见）。均为空时保持 fail-closed。
+func (r *nnsRegistry) resolveServiceName(name string) string {
+	if name != "" {
+		return name
+	}
+	if r.defaultServiceName != "" {
+		return r.defaultServiceName
+	}
+	if ls := r.client.GetLocalService(); ls != nil {
+		return ls.ServiceName.FullName
+	}
+	return ""
 }

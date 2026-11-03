@@ -7,11 +7,16 @@ import (
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/kitex/pkg/utils"
+	"github.com/cloudwego/kitex/server"
+	"github.com/cloudwego/kitex/transport"
 
 	ekiterr "github.com/oekit/pkg/errors"
 )
 
-// WithBizErrorBridge 返回 kitex client middleware,把对端抛的 kitex kerrors
+// WithBizErrorBridge 返回 kitex client.Option,把对端抛的 kitex kerrors
 // (BizStatusError / GRPCBizStatusError / DetailedError / timeout / no-instance / ACL)
 // 转为 ekit BizError 沿原 error 通道上抛,让 ekit handler 层 middleware.Fail +
 // StatusMapper 走统一处理路径,不再 fallback 500。
@@ -20,6 +25,39 @@ import (
 // ekit *BizError,使用 errors.Is/As 判定的代码需注意。pkg/errors.AsBizError
 // 仍可识别(*BizError Unwrap 自身 cause,kerrors.BizStatusError 通过
 // kerrors.FromBizStatusError 提取)。
+//
+// # 类型化业务错误的收敛位置(#94)
+//
+// kitex client.Call 把类型化业务错误(ri.Invocation().BizStatusErr(),TTHeader
+// biz-status 头解出)附到 err 的时机在 **middleware 链之后**(doFallbackIfNeeded
+// 尾部):handler 抛 kerrors.BizStatusError 时 unary endpoint 的语义是"塞 rpcinfo
+// 后 return nil",链内 err 恒 nil。故本 bridge 在 middleware 出口直接读 rpcinfo
+// 的 BizStatusErr 收敛——包括 err==nil 的分支,否则类型化业务错误会以
+// (nil, nil) 假成功放行。
+//
+// ⚠️ 收敛发生在链内:client fallback / retry 看到的 err 从 nil 变为
+// *BizError(业务错误本身);业务错误经 rpcinfo 的判定路径
+// (fallback 内 ri.Invocation().BizStatusErr())仍然可用。
+//
+// # TTHeader 传输前提(#94)
+//
+// 类型化 BizStatusError 经 TTHeader biz-status 头 + 双侧 transmeta meta handler
+// 送达:server 端 transmeta.ServerTTHeaderHandler 写头,client 端
+// transmeta.ClientTTHeaderHandler 读头。缺任一环节时 biz-status 头不走,
+// 业务错误被静默吞成 (nil, nil) 假成功(丢的是"业务错误"而不是"链路错误",
+// 调用方完全无感)。故本 option 默认附加:
+//
+//   - client.WithTransportProtocol(transport.TTHeaderFramed)
+//   - client.WithMetaHandler(transmeta.ClientTTHeaderHandler)
+//
+// 服务端需对称使用 [WithBizErrorBridgeServer]。在此 option 之后再传
+// client.WithTransportProtocol 可覆盖默认传输协议。
+//
+// ⚠️ 修正(此前注释有误):普通 thrift/TTHeader ping-pong 下 server 端
+// BizStatusError 的类型化 code/msg **可以**到达 client(TTHeader + 双侧 meta
+// handler 路径,kerrors.FromBizStatusError 直接命中);"仅 ttstream/gRPC 流式
+// 支持"的旧结论是缺 meta handler 时的观测,按它配置会误判"类型化映射不可得"
+// 而放弃正确配置。
 //
 // 官方依据:
 //
@@ -32,13 +70,26 @@ import (
 //	    kitex.WithBizErrorBridge(),
 //	    client.WithHostPorts(":8888"),
 //	)
-//
-// ⚠️ kitex v0.16.3 实测(e2e 2026-09-06):普通 thrift/TTHeader ping-pong 下,
-// server 端 BizStatusError 不做类型化解码(仅 ttstream/gRPC 流式支持),
-// 到达 client 的是 DetailedError 文本 → 走 50000 兜底分支;类型化 code/msg
-// 映射需要流式协议。详见 kitex/e2e_meta_test.go。
+//	svr := myservice.NewServer(handler, kitex.WithBizErrorBridgeServer())
 func WithBizErrorBridge() client.Option {
-	return client.WithMiddlewareBuilder(bizErrorBridgeMWBuilder)
+	parts := []client.Option{
+		client.WithTransportProtocol(transport.TTHeaderFramed),
+		client.WithMetaHandler(transmeta.ClientTTHeaderHandler),
+		client.WithMiddlewareBuilder(bizErrorBridgeMWBuilder),
+	}
+	return client.Option{F: func(o *client.Options, di *utils.Slice) {
+		for _, opt := range parts {
+			opt.F(o, di)
+		}
+	}}
+}
+
+// WithBizErrorBridgeServer 返回与 [WithBizErrorBridge] 对称的 kitex server.Option:
+// 注册 transmeta.ServerTTHeaderHandler,把 handler 抛的类型化 BizStatusError
+// 写进 TTHeader biz-status 头。缺它时业务错误不随响应上行,client 侧无论是否
+// 开桥接都只能收到 (nil, nil) 假成功。
+func WithBizErrorBridgeServer() server.Option {
+	return server.WithMetaHandler(transmeta.ServerTTHeaderHandler)
 }
 
 // bizErrorBridgeMWBuilder 是 WithBizErrorBridge 的核心 middleware 构造逻辑,
@@ -48,6 +99,16 @@ func bizErrorBridgeMWBuilder(ctx context.Context) endpoint.Middleware {
 		return func(ctx context.Context, req, resp interface{}) (err error) {
 			err = next(ctx, req, resp)
 			if err == nil {
+				// 类型化业务错误在 middleware 链之后才附到 err(client.Call →
+				// doFallbackIfNeeded),链内 err 恒 nil——从 rpcinfo 直接取,
+				// 否则最主要的场景(类型化业务错误)恒不生效。
+				if ri := rpcinfo.GetRPCInfo(ctx); ri != nil && ri.Invocation() != nil {
+					if bizErr := ri.Invocation().BizStatusErr(); bizErr != nil {
+						if biz, ok := FromKitexError(bizErr); ok {
+							return biz
+						}
+					}
+				}
 				return nil
 			}
 			if biz, ok := FromKitexError(err); ok {

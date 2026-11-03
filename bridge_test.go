@@ -6,8 +6,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/kitex/pkg/utils"
+	"github.com/cloudwego/kitex/transport"
 
 	ekiterr "github.com/oekit/pkg/errors"
 )
@@ -367,5 +372,85 @@ func TestFromKitexError_PreservesCauseChain(t *testing.T) {
 	}
 	if _, ok := kerrors.FromBizStatusError(biz3); !ok {
 		t.Error("kerrors.FromBizStatusError(biz3) should hold via Cause chain")
+	}
+}
+
+// TestWithBizErrorBridge_PostChainBizStatusErr #94 回归主体:kitex client.Call
+// 在 middleware 链返回**之后**才把类型化业务错误(ri.Invocation().BizStatusErr())
+// 附到 err,链内 err 恒 nil——bridge 必须从 rpcinfo 直接收敛,否则类型化业务
+// 错误以 (nil, nil) 假成功放行。
+func TestWithBizErrorBridge_PostChainBizStatusErr(t *testing.T) {
+	ink := rpcinfo.NewInvocation("e2e-echo", "Echo")
+	ink.SetBizStatusErr(kerrors.NewBizStatusError(1001, "余额不足"))
+	ri := rpcinfo.NewRPCInfo(nil, nil, ink, nil, nil)
+	ctx := rpcinfo.NewCtxWithRPCInfo(context.Background(), ri)
+
+	// next 返回 nil:模拟 handler 抛 BizStatusError 后 unary endpoint
+	// "塞 rpcinfo 后 return nil" 的语义。
+	ep := invokeMiddleware(t, (&fakeEndpoint{err: nil}).wrap())
+	err := ep(ctx, nil, nil)
+	if err == nil {
+		t.Fatal("post-chain BizStatusErr must not be bridged as (nil, nil) fake success")
+	}
+
+	biz, ok := ekiterr.AsBizError(err)
+	if !ok {
+		t.Fatalf("expected *BizError, got %T: %v", err, err)
+	}
+	if biz.BizCode != 1001 {
+		t.Errorf("BizCode = %d, want 1001", biz.BizCode)
+	}
+	if biz.Message != "余额不足" {
+		t.Errorf("Message = %q, want %q", biz.Message, "余额不足")
+	}
+	// 原始错误链不断:kerrors 提取器对转换结果依然可用
+	if _, ok := kerrors.FromBizStatusError(biz); !ok {
+		t.Error("kerrors.FromBizStatusError(biz) should hold via Cause chain")
+	}
+}
+
+// TestWithBizErrorBridge_PostChainBizStatusErr_Priority 链内 err 与 rpcinfo
+// biz 错误并存时,err 通道优先(与 doFallbackIfNeeded 的既有语义一致)。
+func TestWithBizErrorBridge_PostChainBizStatusErr_Priority(t *testing.T) {
+	ink := rpcinfo.NewInvocation("e2e-echo", "Echo")
+	ink.SetBizStatusErr(kerrors.NewBizStatusError(1001, "rpcinfo 侧"))
+	ri := rpcinfo.NewRPCInfo(nil, nil, ink, nil, nil)
+	ctx := rpcinfo.NewCtxWithRPCInfo(context.Background(), ri)
+
+	inner := kerrors.NewBizStatusError(2002, "err 侧")
+	ep := invokeMiddleware(t, (&fakeEndpoint{err: inner}).wrap())
+	err := ep(ctx, nil, nil)
+
+	biz, ok := ekiterr.AsBizError(err)
+	if !ok {
+		t.Fatalf("expected *BizError, got %T: %v", err, err)
+	}
+	if biz.BizCode != 2002 {
+		t.Errorf("BizCode = %d, want 2002 (err 通道优先)", biz.BizCode)
+	}
+}
+
+// TestWithBizErrorBridge_TTHeaderPrereqs #94 回归:bridge 自动携带 TTHeader
+// 传输与 ClientTTHeaderHandler——缺任一时 biz-status 头不走,业务错误被吞成
+// (nil, nil) 假成功(见 bridge_e2e_test.go 的钉子用例)。
+func TestWithBizErrorBridge_TTHeaderPrereqs(t *testing.T) {
+	o := &client.Options{Configs: rpcinfo.NewRPCConfig()}
+	var di utils.Slice
+	WithBizErrorBridge().F(o, &di)
+
+	if o.Configs.TransportProtocol()&transport.TTHeader == 0 {
+		t.Errorf("TransportProtocol() = %v, want include TTHeader", o.Configs.TransportProtocol())
+	}
+	foundMeta := false
+	for _, h := range o.MetaHandlers {
+		if h == transmeta.ClientTTHeaderHandler {
+			foundMeta = true
+		}
+	}
+	if !foundMeta {
+		t.Error("ClientTTHeaderHandler not registered (biz-status 头不会被解出)")
+	}
+	if len(o.MWBs) != 1 {
+		t.Errorf("len(MWBs) = %d, want 1 (bridge middleware)", len(o.MWBs))
 	}
 }
