@@ -208,12 +208,12 @@ github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLA
 github.com/nishanths/predeclared v0.0.0-20200524104333-86fad755b4d3/go.mod h1:nt3d53pc1VYcphSCIaYAJtnPYnr3Zyn8fMq2wvPGPso=
 github.com/oekit/bootstrap v0.6.8 h1:zwlF3I8XyWFBFUugSrV6SZGeVIa9O2Q1SACziz2e7/Y=
 github.com/oekit/bootstrap v0.6.8/go.mod h1:dXP00FI/U76pMLGxEvciTDlLc2pJW3HRk903mVYGqAk=
-github.com/oekit/concurrency v0.25.0 h1:a7BbBYlXRd81ywJjsMHnZi3iTO4WAcUBQ1wdI5VT5dw=
-github.com/oekit/concurrency v0.25.0/go.mod h1:bSfd4QT+4Ld90NxNo3Ck+PM1h/nqpdDPoVB711bxfv4=
+github.com/oekit/concurrency v0.25.1 h1:MJ8EqzkTzk282qAOrV1PjzNrxoNo4salrzun7K1zqPE=
+github.com/oekit/concurrency v0.25.1/go.mod h1:jcmGKsn824v7RA3+CubaOqXERFJtsLMpgMSaMZOAxjo=
 github.com/oekit/core v0.12.2 h1:HeuiNUQlPvTo/8wNZzsqqKOzow33z1bDKglpOlBWVUo=
 github.com/oekit/core v0.12.2/go.mod h1:HhBTwYHU5MUp9tfNvHjfZv6P4yglQmn4jKmz98dUIsM=
-github.com/oekit/logx v0.8.2 h1:3WIlyxgqU9Y3pwf9fbflzBCgVdYOAe2UAyF9oTcFFas=
-github.com/oekit/logx v0.8.2/go.mod h1:nWe3O4L/07u2ixyvDakXaq4iYoWmSOoOqoJugNb1Zv0=
+github.com/oekit/logx v0.8.3 h1:NPsTpAiGSHyXBT06RUzs577t3PlZquTP+56Q2zZxVSo=
+github.com/oekit/logx v0.8.3/go.mod h1:PImzWIays3sTLxewhKh8wI8xqMlATVJxz6V0ifIgNso=
 github.com/oekit/logx/kitexlog v0.1.8 h1:n3x9Fuswx1EpEZUftEPbA8DesOcG0Uf2qIis/CMJRkc=
 github.com/oekit/logx/kitexlog v0.1.8/go.mod h1:igQIr4IRuSI2/zyCNdbNI2AB1LL9lME50bDob6hyytI=
 github.com/oekit/metrics v0.1.11 h1:uMqUFihnwz3BDHXREZ59/O3EjeZu5lwbAKjElxbuq2U=
