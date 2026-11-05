@@ -2,6 +2,10 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.7.7] — 2026-11-06
+
+- build: 矩阵依赖地板对齐（维护轮 #233）
+
 ## [v0.7.6] — 2026-11-03
 
 - BizErrorBridge 链后收敛类型化 biz 错误，自动带 TTHeader 传输前提与双侧 meta handler，消灭 (nil,nil) 假成功（#94）
