@@ -13,17 +13,17 @@ require (
 	github.com/oekit/bootstrap v0.6.9
 	github.com/oekit/concurrency v0.25.1
 	github.com/oekit/core v0.12.2
-	github.com/oekit/logx v0.8.3
-	github.com/oekit/metrics v0.1.12
-	github.com/oekit/nns v0.5.8
+	github.com/oekit/logx v0.8.4
+	github.com/oekit/metrics v0.1.13
+	github.com/oekit/nns v0.5.9
 	github.com/oekit/registry v0.5.4
-	github.com/oekit/registry/nacos v0.1.5
+	github.com/oekit/registry/nacos v0.1.7
 	github.com/prometheus/client_golang v1.25.0
 )
 
 require (
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/oekit/registry/nacosimpl v0.1.6 // indirect
+	github.com/oekit/registry/nacosimpl v0.1.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
@@ -81,7 +81,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oekit/logx/kitexlog v0.1.9
-	github.com/oekit/pkg v0.35.0
+	github.com/oekit/pkg v0.35.1
 	github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
