@@ -218,8 +218,8 @@ github.com/oekit/logx/kitexlog v0.1.9 h1:6cEsAaYgxd3Q7zB3ZEY/EZFyeMhmiElExAAS++x
 github.com/oekit/logx/kitexlog v0.1.9/go.mod h1:+Dwoomw+P2jya9kIcbkjBk8TpmMN3tM48ha+SV5Bcgs=
 github.com/oekit/metrics v0.1.12 h1:7zQTmVF60pIXkNV/lVUVKZLn3VuLxVvx7h0O4fRswl8=
 github.com/oekit/metrics v0.1.12/go.mod h1:M7HMpeeLQca6cuZ90rlnrNKhcw8h2I7hPYIQ6WcYj5c=
-github.com/oekit/pkg v0.34.1 h1:F+jDaHm7qDIeMvELrjUv2yGqJPOG3Qg5UL5VUjpojbU=
-github.com/oekit/pkg v0.34.1/go.mod h1:sVeOtmG1sLY2aSnzFIbUAF2Qoh7G8R5vnWtWmLCv8NM=
+github.com/oekit/pkg v0.35.0 h1:lKGJw4s9CzxUpmlE+iywpM9BIkSGPI0reKwpSaN5Nmo=
+github.com/oekit/pkg v0.35.0/go.mod h1:sVeOtmG1sLY2aSnzFIbUAF2Qoh7G8R5vnWtWmLCv8NM=
 github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc h1:Ak86L+yDSOzKFa7WM5bf5itSOo1e3Xh8bm5YCMUXIjQ=
 github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc/go.mod h1:Lu3tH6HLW3feq74c2GC+jIMS/K2CFcDWnWD9XkenwhI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
