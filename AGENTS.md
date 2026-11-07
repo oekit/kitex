@@ -9,6 +9,7 @@
 ### 嵌套模块（独立发版 · 依赖隔离，v0.7.0 起）
 - `observability/tracing/instrumentation/kitexotel/` → module `github.com/oekit/kitex/observability/tracing/instrumentation/kitexotel`
 - `istio/` → module `github.com/oekit/kitex/istio`
+- `cmd/thrift2openapi/` → module `github.com/oekit/kitex/cmd/thrift2openapi`（thrift→OpenAPI 生成器 CLI，thriftgo 解析器依赖隔离在子模块内，#124）
 
 **为什么拆**：obs-opentelemetry / xds 的 go.mod 把 `apache/thrift` 抬到 v0.16.0，
 而 thrift v0.16 的协议方法多了 `context.Context` 首参 ⇒ 留在根模块时，**任何
