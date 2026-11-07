@@ -30,3 +30,4 @@ updates:
       all-deps:
         patterns:
           - "*"
+    directory: /cmd/thrift2openapi
