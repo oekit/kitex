@@ -84,7 +84,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507 // indirect
-	github.com/oekit/concurrency v0.28.0 // indirect
+	github.com/oekit/concurrency v0.28.1 // indirect
 	github.com/oekit/core v0.13.1 // indirect
 	github.com/oekit/logx v0.8.6 // indirect
 	github.com/oekit/logx/kitexlog v0.1.9 // indirect
