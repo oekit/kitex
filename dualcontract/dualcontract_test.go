@@ -118,8 +118,14 @@ func TestAssertSameShape_FailsOnDrift(t *testing.T) {
 		if len(ft.errors) == 0 {
 			t.Fatal("漂移形态必须 fail")
 		}
-		if !strings.Contains(ft.errors[0], "idempotency_key") {
-			t.Fatalf("错误信息应指明漂移字段：%s", ft.errors[0])
+		found := false
+		for _, e := range ft.errors {
+			if strings.Contains(e, "idempotency_key") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("错误信息应指明漂移字段 idempotency_key：%v", ft.errors)
 		}
 	})
 }

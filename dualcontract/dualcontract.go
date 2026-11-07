@@ -38,6 +38,7 @@ package dualcontract
 
 import (
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -259,7 +260,21 @@ func DiffShapes(httpReq, rpcReq any, opts ...Option) []FieldDiff {
 		}
 		diffs = append(diffs, FieldDiff{Field: name, Kind: DiffMissingHTTP, RPCType: rf.Type})
 	}
+	sort.Slice(diffs, func(i, j int) bool { return diffList(diffs).Less(i, j) })
 	return diffs
+}
+
+// diffs 是可排序差异列表（按字段名排序，保证 diff 输出确定性——CI 门禁
+// 的错误信息必须稳定，map 遍历序不可用）。
+type diffList []FieldDiff
+
+func (d diffList) Len() int      { return len(d) }
+func (d diffList) Swap(i, j int) { d[i], d[j] = d[j], d[i] }
+func (d diffList) Less(i, j int) bool {
+	if d[i].Field != d[j].Field {
+		return d[i].Field < d[j].Field
+	}
+	return d[i].Kind < d[j].Kind
 }
 
 func indexByName(s Shape) map[string]FieldShape {
