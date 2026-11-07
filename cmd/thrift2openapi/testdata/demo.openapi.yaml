@@ -1,0 +1,331 @@
+openapi: 3.0.3
+info:
+    title: Demo API
+    version: v2
+servers:
+    - url: https://demo.example.com
+paths:
+    /api/v1/send:
+        post:
+            summary: sendNotice
+            description: |-
+                发送通知
+                幂等：携带 Idempotency-Key 头
+            tags:
+                - DemoService
+            operationId: DemoService.sendNotice
+            parameters:
+                - name: X-Request-ID
+                  in: header
+                  description: 链路头
+                  required: false
+                  schema:
+                    type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                title:
+                                    type: string
+                                    description: 标题，展示在通知中心
+                                content:
+                                    type: string
+                                    description: 正文，Markdown
+                                channels:
+                                    type: array
+                                    description: 投递渠道，缺省仅 email
+                                    items:
+                                        type: string
+                                    default:
+                                        - email
+                                page:
+                                    $ref: '#/components/schemas/common.Page'
+                            required:
+                                - title
+                                - content
+            responses:
+                "200":
+                    description: 发送通知
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description: 统一响应包络（-envelope）：code=0 成功，msg=错误信息，data=业务载荷
+                                properties:
+                                    code:
+                                        type: integer
+                                        format: int32
+                                        description: 业务码，0=成功
+                                    msg:
+                                        type: string
+                                        description: 错误信息，成功时为空
+                                    data:
+                                        $ref: '#/components/schemas/SendResp'
+                                required:
+                                    - code
+                                    - msg
+            security:
+                - bearerAuth: []
+    /api/v1/notice/{id}:
+        get:
+            summary: getNotice
+            description: 通知详情
+            tags:
+                - DemoService
+            operationId: DemoService.getNotice
+            parameters:
+                - name: id
+                  in: path
+                  description: 通知 ID
+                  required: true
+                  schema:
+                    type: integer
+                    format: int64
+            responses:
+                "200":
+                    description: 通知详情
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description: 统一响应包络（-envelope）：code=0 成功，msg=错误信息，data=业务载荷
+                                properties:
+                                    code:
+                                        type: integer
+                                        format: int32
+                                        description: 业务码，0=成功
+                                    msg:
+                                        type: string
+                                        description: 错误信息，成功时为空
+                                    data:
+                                        $ref: '#/components/schemas/SendResp'
+                                required:
+                                    - code
+                                    - msg
+            security:
+                - bearerAuth: []
+        delete:
+            summary: deleteNotice
+            description: 删除通知
+            tags:
+                - DemoService
+            operationId: DemoService.deleteNotice
+            parameters:
+                - name: id
+                  in: path
+                  description: 通知 ID
+                  required: true
+                  schema:
+                    type: integer
+                    format: int64
+            responses:
+                "200":
+                    description: 删除通知
+            security:
+                - bearerAuth: []
+    /api/v1/user:
+        get:
+            summary: getUser
+            description: 用户查询（query 绑定示例）
+            tags:
+                - DemoService
+            operationId: DemoService.getUser
+            parameters:
+                - name: uid
+                  in: query
+                  description: 用户 ID
+                  required: true
+                  schema:
+                    type: integer
+                    format: int64
+                - name: q
+                  in: query
+                  description: 搜索词
+                  required: false
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: 用户查询（query 绑定示例）
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description: 统一响应包络（-envelope）：code=0 成功，msg=错误信息，data=业务载荷
+                                properties:
+                                    code:
+                                        type: integer
+                                        format: int32
+                                        description: 业务码，0=成功
+                                    msg:
+                                        type: string
+                                        description: 错误信息，成功时为空
+                                    data:
+                                        $ref: '#/components/schemas/User'
+                                required:
+                                    - code
+                                    - msg
+            security:
+                - bearerAuth: []
+        put:
+            summary: updateUser
+            description: 更新用户
+            tags:
+                - DemoService
+            operationId: DemoService.updateUser
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                uid:
+                                    type: integer
+                                    format: int64
+                                    description: 用户 ID
+                                name:
+                                    type: string
+                                    description: 新昵称
+                            required:
+                                - uid
+            responses:
+                "200":
+                    description: 更新用户
+            security:
+                - bearerAuth: []
+    /api/v1/avatar:
+        post:
+            summary: uploadAvatar
+            description: 上传头像（multipart 示例）
+            tags:
+                - DemoService
+            operationId: DemoService.uploadAvatar
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            properties:
+                                filename:
+                                    type: string
+                                    description: 文件名
+                                content:
+                                    type: string
+                                    format: byte
+                                    description: 文件内容
+                            required:
+                                - filename
+                                - content
+            responses:
+                "200":
+                    description: 上传头像（multipart 示例）
+            security:
+                - bearerAuth: []
+    /api/v1/login:
+        post:
+            summary: login
+            description: 登录：免 JWT 标记（api.noauth）
+            tags:
+                - DemoService
+            operationId: DemoService.login
+            parameters:
+                - name: uid
+                  in: query
+                  description: 用户 ID
+                  required: true
+                  schema:
+                    type: integer
+                    format: int64
+                - name: q
+                  in: query
+                  description: 搜索词
+                  required: false
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: 登录：免 JWT 标记（api.noauth）
+            security: []
+components:
+    schemas:
+        common.Page:
+            type: object
+            description: 分页参数（跨 IDL include 复用）
+            properties:
+                page:
+                    type: integer
+                    format: int32
+                    description: 页码，从 1 开始
+                    default: 1
+                page_size:
+                    type: integer
+                    format: int32
+                    description: 每页条数
+                    default: 20
+            required:
+                - page
+                - page_size
+        common.Status:
+            type: integer
+            format: int32
+            description: |-
+                通知状态（线上按 i32 传输）
+                取值：STATUS_UNKNOWN=0, STATUS_ACTIVE=1, STATUS_BANNED=2
+            enum:
+                - 0
+                - 1
+                - 2
+        SendResp:
+            type: object
+            properties:
+                notice_id:
+                    type: integer
+                    format: int64
+                    description: 通知 ID
+                status:
+                    $ref: '#/components/schemas/common.Status'
+                extra:
+                    type: object
+                    description: 扩展信息
+                    additionalProperties:
+                        type: string
+                sent_at:
+                    type: integer
+                    format: int64
+                    description: 发送时间
+            required:
+                - notice_id
+                - status
+        User:
+            type: object
+            description: 用户
+            properties:
+                uid:
+                    type: integer
+                    format: int64
+                    description: 用户 ID
+                name:
+                    type: string
+                    description: 昵称
+                manager:
+                    $ref: '#/components/schemas/User'
+                tags:
+                    type: array
+                    description: 标签（set → uniqueItems）
+                    uniqueItems: true
+                    items:
+                        type: string
+            required:
+                - uid
+                - name
+    securitySchemes:
+        bearerAuth:
+            type: http
+            description: 全局鉴权（免 JWT 路由见 api.noauth 注解 / -auth-exempt 配置）
+            scheme: bearer
+            bearerFormat: JWT

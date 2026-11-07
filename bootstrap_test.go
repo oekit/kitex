@@ -370,3 +370,121 @@ func TestRunServer_NoProbeAddr_FiresBeforeRun(t *testing.T) {
 		t.Fatalf("onReady called %d times, want 1", got)
 	}
 }
+
+// TestRunServer_NegativeProbeTimeout_DisablesProbeSyncFires 是 oekit#142 的
+// kitex 侧回归：WithReadyProbeTimeout 传负数禁用探活（与 hertz 侧同名 option
+// 语义对齐）——即使已设置 WithReadyAddr，onReady 也必须改在 svr.Run() 启动前
+// **同步**回调，不做端口探活（回调时端口可能尚未监听）。
+//
+// 旧实现 timeout<=0 一律取默认 5s 继续探活：双协议服务复制 hertz 的配置时
+// 行为漂移（hertz 负数=禁用）。
+func TestRunServer_NegativeProbeTimeout_DisablesProbeSyncFires(t *testing.T) {
+	fa := newFakeApp()
+
+	var readyCalled atomic.Int64
+	svr := &fakeServer{
+		runFunc: func() error {
+			// 同步语义断言：Run 启动时 onReady 必须已回调（同一 goroutine 内
+			// 先回调后 Run），探活禁用路径绝不 spawn 探活协程。
+			if readyCalled.Load() != 1 {
+				t.Error("负超时禁用探活：onReady 必须在 svr.Run() 之前同步回调")
+			}
+			return nil
+		},
+	}
+
+	RunServer(fa, "neg-timeout-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyAddr("127.0.0.1:1"),        // 不可建连的探活目标：若仍探活必超时失败
+		WithReadyProbeTimeout(-time.Second)) // 负数 = 禁用探活
+
+	deadline := time.After(3 * time.Second)
+	for readyCalled.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("onReady not called within deadline（负超时应禁用探活并同步回调）")
+		case <-fa.requestedCh:
+			t.Fatal("禁用探活路径不应请求关机")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if got := readyCalled.Load(); got != 1 {
+		t.Fatalf("onReady called %d times, want 1", got)
+	}
+	fa.cancel()
+}
+
+// TestWithReadyProbeTimeoutOptionSemantics 钉住 oekit#142 对齐后的 option
+// 边界语义：负数=禁用探活；零值/正数=不禁用（零值在 probeAndReady 内取默认 5s）。
+func TestWithReadyProbeTimeoutOptionSemantics(t *testing.T) {
+	cases := []struct {
+		name     string
+		d        time.Duration
+		disabled bool
+	}{
+		{"negative disables", -1 * time.Second, true},
+		{"zero keeps default path", 0, false},
+		{"positive sets timeout", 3 * time.Second, false},
+		{"missing option keeps default path", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &runServerConfig{}
+			if tc.name != "missing option keeps default path" {
+				WithReadyProbeTimeout(tc.d)(cfg)
+			}
+			if cfg.probeDisabled != tc.disabled {
+				t.Fatalf("probeDisabled = %v, want %v", cfg.probeDisabled, tc.disabled)
+			}
+		})
+	}
+}
+
+// TestRunServer_StopIdempotent_SecondStopReturnsNil 钉住 #121 修正后的注释
+// 契约：kitex v0.16.4 的 server.Stop() 以 sync.Once 包裹，**二次 Stop 返回
+// nil**（全仓不存在 ErrServerDone 符号）。RunServer 注册的 closer 依赖该
+// 幂等行为处理「信号路径 + bootstrap 关闭回调」的双路关闭竞争——kitex 未来
+// 若改为返回错误，本测试先红，提示需要补 hertz 式的已关机错误吞并。
+func TestRunServer_StopIdempotent_SecondStopReturnsNil(t *testing.T) {
+	addr := reserveLoopbackAddr(t)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		t.Fatalf("resolve addr: %v", err)
+	}
+
+	svr := echoservice.NewServer(&echoHandler{},
+		server.WithServiceAddr(tcpAddr),
+		server.WithExitWaitTime(200*time.Millisecond), // 测试快速排空
+	)
+	runErr := make(chan error, 1)
+	go func() { runErr <- svr.Run() }()
+
+	// 等端口真的在监听（与 e2e startBizErrServer 同口径）。
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if c, derr := net.DialTimeout("tcp", addr, 100*time.Millisecond); derr == nil {
+			_ = c.Close()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// 第一次 Stop：优雅排空，期望 nil。
+	if stopErr := svr.Stop(); stopErr != nil {
+		t.Fatalf("first Stop() = %v, want nil", stopErr)
+	}
+	// 第二次 Stop（bootstrap 关闭回调与信号路径双路关闭的竞争路径）：sync.Once
+	// 幂等 ⇒ 必须返回 nil，绝无 ErrServerDone 一类的已关机错误。
+	if stopErr := svr.Stop(); stopErr != nil {
+		t.Fatalf("second Stop() = %v, want nil（kitex v0.16.4 Stop 幂等，#121）", stopErr)
+	}
+
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run() returned error after Stop: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run() did not return after Stop")
+	}
+}

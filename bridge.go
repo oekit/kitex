@@ -88,8 +88,109 @@ func WithBizErrorBridge() client.Option {
 // 注册 transmeta.ServerTTHeaderHandler,把 handler 抛的类型化 BizStatusError
 // 写进 TTHeader biz-status 头。缺它时业务错误不随响应上行,client 侧无论是否
 // 开桥接都只能收到 (nil, nil) 假成功。
-func WithBizErrorBridgeServer() server.Option {
-	return server.WithMetaHandler(transmeta.ServerTTHeaderHandler)
+//
+// 可选 opts 注册 server 侧 error-mapper(见 [WithBizErrorMapper]):应用侧
+// 错误 → 类型化 BizStatusError 的映射在**中间件出口**对所有 outbound error
+// 单点生效,不再依赖每个 handler 每个返回点的人工 toRPCError 纪律(#122,
+// octopus 实证:4 个方法漏 1 处,漏掉的路径以未类型化传输错误上抛,同服务内
+// 契约漂移)。
+//
+// 用法:
+//
+//	svr := myservice.NewServer(handler,
+//	    kitex.WithBizErrorBridgeServer(
+//	        kitex.WithBizErrorMapper(myAppErrorMapper),
+//	    ))
+func WithBizErrorBridgeServer(opts ...BizErrorBridgeServerOption) server.Option {
+	cfg := &bizErrorBridgeServerConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	parts := []server.Option{
+		server.WithMetaHandler(transmeta.ServerTTHeaderHandler),
+	}
+	if cfg.mapper != nil {
+		parts = append(parts, server.WithMiddleware(bizErrorMapperMW(cfg.mapper)))
+	}
+	return server.Option{F: func(o *server.Options, di *utils.Slice) {
+		for _, opt := range parts {
+			opt.F(o, di)
+		}
+	}}
+}
+
+// BizErrorMapper 把 server 中间件出口的 outbound error 映射为类型化业务错误
+// 的 (code, msg)。返回 ok=false 表示不映射,该错误走**原传输错误语义**。
+//
+// 传入的 err 是中间件链出口的错误形态:handler 返回的非类型化错误会被 kitex
+// core endpoint 包成 kerrors.ErrBiz 的 DetailedError(原始应用错误经
+// Unwrap 链可达,errors.Is/As 直接可用):
+//
+//	code, msg, ok := mapper(err)
+//	var appErr *pkg.AppError
+//	if errors.As(err, &appErr) && appErr.Code == 40901 { ... }
+//
+// 契约点(#122):
+//   - 已是 BizStatusError 的错误**原样透传**,mapper 不覆盖显式桥(handler
+//     主动抛的类型化错误在 core endpoint 已塞 rpcinfo,不会经过 mapper);
+//   - ok=false 走原传输错误语义;
+//   - ok=true 时映射结果写进 TTHeader biz-status 头,挂 [WithBizErrorBridge]
+//     的 client 收到类型化 BizStatusError(与 client 侧桥的链内收敛对称)。
+type BizErrorMapper func(err error) (code int32, msg string, ok bool)
+
+// BizErrorBridgeServerOption 配置 [WithBizErrorBridgeServer] 的 server 侧行为。
+type BizErrorBridgeServerOption func(*bizErrorBridgeServerConfig)
+
+type bizErrorBridgeServerConfig struct {
+	mapper BizErrorMapper
+}
+
+// WithBizErrorMapper 注册 server 侧错误映射器(需配合 [WithBizErrorBridgeServer]
+// 透传使用,单独传入 kitex server.Option 列表无效)。映射在中间件出口对所有
+// outbound error 单点生效,典型用法是把 pkg.AppError/业务码 error 统一收敛为
+// 类型化业务错误,消除逐 return 点人工映射的漏点(#122)。
+func WithBizErrorMapper(m BizErrorMapper) BizErrorBridgeServerOption {
+	return func(cfg *bizErrorBridgeServerConfig) { cfg.mapper = m }
+}
+
+// bizErrorMapperMW 是 WithBizErrorMapper 的核心 middleware,抽出为包内
+// helper 以便测试直接调(与 bizErrorBridgeMWBuilder 同模式)。
+//
+// 挂载点:server.WithMiddleware 注册的是 kitex 通用中间件(包裹 unary 与
+// streaming 两条路径),位于 core middleware 之外——handler 抛的
+// BizStatusError 在 core endpoint(invokeHandleEndpoint/streamHandleEndpoint)
+// 内已被塞进 rpcinfo Invocation 并转为 nil,因此本 middleware 出口看到的
+// 非 nil err 一定是**非类型化**错误(ErrBiz 包装的应用错误);映射后对称
+// core endpoint 的桥路径:塞 rpcinfo + return nil,由
+// transmeta.ServerTTHeaderHandler 写 biz-status 头。
+func bizErrorMapperMW(mapper BizErrorMapper) endpoint.Middleware {
+	return func(next endpoint.Endpoint) endpoint.Endpoint {
+		return func(ctx context.Context, req, resp interface{}) error {
+			err := next(ctx, req, resp)
+			if err == nil {
+				// err==nil:成功,或 handler 显式抛的类型化 BizStatusError
+				// (core endpoint 已塞 rpcinfo)——mapper 不覆盖显式桥。
+				return nil
+			}
+			if _, ok := kerrors.FromBizStatusError(err); ok {
+				// 中间件链内显式抛的类型化错误:原样透传(#122 契约点)。
+				return err
+			}
+			code, msg, mapped := mapper(err)
+			if !mapped {
+				return err
+			}
+			bizErr := kerrors.NewBizStatusError(code, msg)
+			if ri := rpcinfo.GetRPCInfo(ctx); ri != nil {
+				if setter, ok := ri.Invocation().(rpcinfo.InvocationSetter); ok {
+					setter.SetBizStatusErr(bizErr)
+					return nil
+				}
+			}
+			// rpcinfo 不可写(非 RPC 上下文)时兜底:按类型化错误上抛。
+			return bizErr
+		}
+	}
 }
 
 // bizErrorBridgeMWBuilder 是 WithBizErrorBridge 的核心 middleware 构造逻辑,
