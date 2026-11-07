@@ -2,6 +2,10 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.7.14] — 2026-11-08
+
+- build: 依赖地板对齐——本版把 oekit 依赖地板抬到各依赖当前最新已发布版本（matrix-tools/scripts/align_floors.py 维护轮）
+
 ## [v0.7.13] — 2026-11-08
 
 - test(bootstrap): #137 复审收口——预检 TOCTOU 补全链路回归钉（预检通过 → 他人抢占端口 → 本进程 bind 失败 ⇒ runDone 门拦截，不回调 onReady、按启动失败关机）；修复本体已于 v0.7.12 随 #120 落地（RegisterStartHook 门 + 建连后 runDone 复核——kitex server.Server 无 IsRunning 自省 API，复核采用 started/runDone 双信号），#137 系按旧实现状态的重报，注释引用同步补挂
