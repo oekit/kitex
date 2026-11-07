@@ -12,19 +12,16 @@ import (
 // httpSendReq 模拟 hz 生成物（octopus_send.thrift SendReq）：
 // json tag + `, required`（hz 的 requiredness 标注形态）。
 type httpSendReq struct {
-	Title string `json:"title,required"`
-	//nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态（非标准 json option，hz FAQ 有述）
-	UID            int64  `json:"uid"` // 网关注入（X-Auth-User-ID），单侧传输差异
-	IdempotencyKey string `json:"idempotency_key,required"`
-	//nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态（非标准 json option，hz FAQ 有述）
-	Channels []string `json:"channels"`
+	Title          string   `json:"title,required"`           //nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态
+	UID            int64    `json:"uid"`                      // 网关注入（X-Auth-User-ID），单侧传输差异
+	IdempotencyKey string   `json:"idempotency_key,required"` //nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态
+	Channels       []string `json:"channels"`
 }
 
 // httpSendReqNoIdem 是漂移形态：HTTP 侧缺幂等键（QuickSend 实证）。
 type httpSendReqNoIdem struct {
-	Title string `json:"title,required"`
-	//nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态（非标准 json option，hz FAQ 有述）
-	UID int64 `json:"uid"`
+	Title string `json:"title,required"` //nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态
+	UID   int64  `json:"uid"`
 }
 
 // rpcSendReq 模拟 kitex 生成物（octopus_rpc.thrift SendNotice 请求）：
@@ -64,9 +61,8 @@ func TestDiffShapes_DetectsMissingIdempotencyKey(t *testing.T) {
 // TestDiffShapes_TypeMismatch 同名字段类型漂移（i64 vs string）。
 func TestDiffShapes_TypeMismatch(t *testing.T) {
 	type badHTTPReq struct {
-		Title string `json:"title,required"`
-		//nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态（非标准 json option，hz FAQ 有述）
-		UID int64 `json:"uid"`
+		Title string `json:"title,required"` //nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态
+		UID   int64  `json:"uid"`
 	}
 	type badRPCReq struct {
 		Title *int64 `thrift:"title,1,required" frugal:"1,required,i64"`
@@ -88,8 +84,7 @@ func TestDiffShapes_TypeMismatch(t *testing.T) {
 // optional）：消费方校验行为会漂移，必须检出。
 func TestDiffShapes_RequirednessMismatch(t *testing.T) {
 	type httpReq struct {
-		A string `json:"a,required"`
-		//nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态（非标准 json option，hz FAQ 有述）
+		A string `json:"a,required"` //nolint:staticcheck // SA5008: 复刻 hz 生成物的 json:"...,required" requiredness 标注形态
 	}
 	type rpcReq struct {
 		A *string `thrift:"a,1,optional" frugal:"1,optional,string"`
