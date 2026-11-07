@@ -23,8 +23,8 @@ require (
 	github.com/bytedance/gopkg v0.1.4
 	github.com/cloudwego/kitex v0.16.4
 	github.com/kitex-contrib/obs-opentelemetry v0.3.0
-	github.com/oekit/kitex v0.7.12
-	github.com/oekit/pkg v0.37.1
+	github.com/oekit/kitex v0.7.13
+	github.com/oekit/pkg v0.37.3
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
@@ -84,9 +84,9 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507 // indirect
-	github.com/oekit/concurrency v0.28.1 // indirect
-	github.com/oekit/core v0.13.1 // indirect
-	github.com/oekit/logx v0.8.6 // indirect
+	github.com/oekit/concurrency v0.28.2 // indirect
+	github.com/oekit/core v0.13.2 // indirect
+	github.com/oekit/logx v0.8.8 // indirect
 	github.com/oekit/logx/kitexlog v0.1.9 // indirect
 	github.com/oekit/metrics v0.1.14 // indirect
 	github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc // indirect

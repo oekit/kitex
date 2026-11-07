@@ -11,9 +11,9 @@ require (
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507
 	github.com/oekit/bootstrap v0.6.15
-	github.com/oekit/concurrency v0.28.1
-	github.com/oekit/core v0.13.1
-	github.com/oekit/logx v0.8.6
+	github.com/oekit/concurrency v0.28.2
+	github.com/oekit/core v0.13.2
+	github.com/oekit/logx v0.8.8
 	github.com/oekit/metrics v0.1.14
 	github.com/oekit/nns v0.5.10
 	github.com/oekit/registry v0.5.5
@@ -81,7 +81,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oekit/logx/kitexlog v0.1.9
-	github.com/oekit/pkg v0.37.1
+	github.com/oekit/pkg v0.37.3
 	github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
