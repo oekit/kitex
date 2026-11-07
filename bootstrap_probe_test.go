@@ -132,8 +132,8 @@ func TestProbeAndReady_StartedThenConnected_FiresReady(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 	go func() {
 		for {
-			c, err := ln.Accept()
-			if err != nil {
+			c, aerr := ln.Accept()
+			if aerr != nil {
 				return
 			}
 			_ = c.Close()
