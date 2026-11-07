@@ -2,6 +2,30 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [observability/tracing/instrumentation/kitexotel/v0.7.12] — 2026-11-07
+
+- fix(bootstrap): 就绪探活改两阶段正向信号（RegisterStartHook 门 + 建连复核 runDone）——预检 TOCTOU 误判窗口闭合（#120）
+- docs(bootstrap): 二次 Stop 注释按 kitex v0.16.4 实况修正——sync.Once 幂等、全仓无 ErrServerDone 符号（#121）
+- feat(bridge): WithBizErrorMapper server 侧 error-mapper 钩子——AppError→BizStatusError 映射挂通用中间件出口单点生效（#122）
+- feat(dualcontract): 新包——hz/kitex 双传输契约防漂移原语（ShapeOf/DiffShapes/AssertSameShape + 幂等键契约常量）（#123）
+- feat(cmd/thrift2openapi): 新嵌套模块——thrift→OpenAPI 3 生成器（thriftgo 真 parser、api 注解全量、$ref 收敛、路由豁免、envelope/auth 标记），替换各服务手搓 regex 解析脚本（#124）
+- fix(bootstrap): WithReadyProbeTimeout 语义与 hertz 统一——负数=禁用探活+Run 前同步回调、零值=默认 5s（oekit#142 kitex 侧）
+- build: 依赖地板对齐（pkg v0.37.1 / logx v0.8.6 / bootstrap v0.6.15 等全线）
+
+关联问题单：kitex#120、kitex#121、kitex#122、kitex#123、kitex#124。
+
+## [v0.7.12] — 2026-11-07
+
+- fix(bootstrap): 就绪探活改两阶段正向信号（RegisterStartHook 门 + 建连复核 runDone）——预检 TOCTOU 误判窗口闭合（#120）
+- docs(bootstrap): 二次 Stop 注释按 kitex v0.16.4 实况修正——sync.Once 幂等、全仓无 ErrServerDone 符号（#121）
+- feat(bridge): WithBizErrorMapper server 侧 error-mapper 钩子——AppError→BizStatusError 映射挂通用中间件出口单点生效（#122）
+- feat(dualcontract): 新包——hz/kitex 双传输契约防漂移原语（ShapeOf/DiffShapes/AssertSameShape + 幂等键契约常量）（#123）
+- feat(cmd/thrift2openapi): 新嵌套模块——thrift→OpenAPI 3 生成器（thriftgo 真 parser、api 注解全量、$ref 收敛、路由豁免、envelope/auth 标记），替换各服务手搓 regex 解析脚本（#124）
+- fix(bootstrap): WithReadyProbeTimeout 语义与 hertz 统一——负数=禁用探活+Run 前同步回调、零值=默认 5s（oekit#142 kitex 侧）
+- build: 依赖地板对齐（pkg v0.37.1 / logx v0.8.6 / bootstrap v0.6.15 等全线）
+
+关联问题单：kitex#120、kitex#121、kitex#122、kitex#123、kitex#124。
+
 ## [observability/tracing/instrumentation/kitexotel/v0.7.11] — 2026-11-06
 
 - build: 矩阵依赖地板对齐（第二轮发版后置·收敛圈）
