@@ -470,13 +470,13 @@ func TestRunServer_StopIdempotent_SecondStopReturnsNil(t *testing.T) {
 	}
 
 	// 第一次 Stop：优雅排空，期望 nil。
-	if err := svr.Stop(); err != nil {
-		t.Fatalf("first Stop() = %v, want nil", err)
+	if stopErr := svr.Stop(); stopErr != nil {
+		t.Fatalf("first Stop() = %v, want nil", stopErr)
 	}
 	// 第二次 Stop（bootstrap 关闭回调与信号路径双路关闭的竞争路径）：sync.Once
 	// 幂等 ⇒ 必须返回 nil，绝无 ErrServerDone 一类的已关机错误。
-	if err := svr.Stop(); err != nil {
-		t.Fatalf("second Stop() = %v, want nil（kitex v0.16.4 Stop 幂等，#121）", err)
+	if stopErr := svr.Stop(); stopErr != nil {
+		t.Fatalf("second Stop() = %v, want nil（kitex v0.16.4 Stop 幂等，#121）", stopErr)
 	}
 
 	select {

@@ -98,6 +98,8 @@ func run(args []string) error {
 			return err
 		}
 	}
+	// 生成的是公开 API 文档（常随仓库提交/被 CI diff），0644 是惯例。
+	//nolint:gosec // G306: 文档非机密，保持常规可读权限
 	return os.WriteFile(*outPath, out, 0o644)
 }
 
