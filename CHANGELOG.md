@@ -2,6 +2,12 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [cmd/thrift2openapi/v0.1.0] — 2026-11-07
+
+- 首发：thrift IDL（api.* 注解体系）→ OpenAPI 3.0 文档生成器——thriftgo 真 parser、api 注解全量、$ref 收敛、路由豁免、envelope/auth 标记，go install 即用（kitex#124）
+
+关联问题单：kitex#124。
+
 ## [observability/tracing/instrumentation/kitexotel/v0.7.12] — 2026-11-07
 
 - fix(bootstrap): 就绪探活改两阶段正向信号（RegisterStartHook 门 + 建连复核 runDone）——预检 TOCTOU 误判窗口闭合（#120）
