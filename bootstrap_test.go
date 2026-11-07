@@ -293,6 +293,68 @@ func TestRunServer_ReadyProbe_PortOwnedByOther_NoReady(t *testing.T) {
 	fa.cancel()
 }
 
+// TestRunServer_ReadyProbe_PortStolenAfterPrecheck_NoReady 是 #137 的 TOCTOU
+// **全链路**回归：端口归属预检（checkProbeAddrFree）通过后、kitex 真正 bind
+// 之前，端口被**他人**抢占 ⇒ 本进程 server 绑定失败（svr.Run() 返回 error）。
+// 此时探活若「连上即回调」会连上对方的监听器并误判就绪 ⇒ onReady 把不属于
+// 自己的实例注册到注册中心。两阶段复核（started 门 + runDone 复核）必须闭合
+// 该误判：server 先退出 ⇒ 按启动失败处理，绝不回调 onReady。
+//
+// 时序确定性：预检、探活协程 spawn、svr.Run() 在同一 goroutine 内顺序执行，
+// fakeServer 的 Run 在预检**之后**才抢占端口；fakeServer 不触发
+// RegisterStartHook（started 永不就绪），探活阶段一必然等到 runDone 关闭
+// （Run 返回）才动——「抢占 → Run 失败返回 → runDone 关闭」全序无竞速。
+//
+// 与既有用例互补：TestRunServer_ReadyProbe_PortOwnedByOther_NoReady 钉
+// 「预检即拦截」（端口在预检时已被占）；本用例钉「预检通过后被抢占」；
+// 「dial 建连成功但 server 已退出」的复核分支由
+// TestProbeAndReady_ServerExitedBeforeReady_NoReady 场景 B 钉住。
+func TestRunServer_ReadyProbe_PortStolenAfterPrecheck_NoReady(t *testing.T) {
+	// 此刻空闲：预检（Listen + Close）必然通过。
+	addr := reserveLoopbackAddr(t)
+
+	fa := newFakeApp()
+	// stolenCh 回传「他人」抢占用的 listener，避免与 Cleanup 跨 goroutine
+	// 共享变量（-race 干净）。
+	stolenCh := make(chan net.Listener, 1)
+	svr := &fakeServer{
+		runFunc: func() error {
+			// 模拟「他人」在预检 Close 与本进程 bind 之间抢占端口：先占住
+			// 监听，再模拟本进程 bind 失败（Run 返回 error）。若 Listen 因
+			// 环境噪声失败（端口被无关进程抢先），Run 仍返回 error，
+			// 「server 退出 ⇒ 不得回调」的断言同样成立。
+			if ln, lerr := net.Listen("tcp", addr); lerr == nil {
+				stolenCh <- ln
+			}
+			return errors.New("simulated kitex bind failure (port stolen after pre-check)")
+		},
+	}
+	t.Cleanup(func() {
+		select {
+		case ln := <-stolenCh:
+			_ = ln.Close()
+		default:
+		}
+	})
+
+	var readyCalled atomic.Int64
+	RunServer(fa, "stolen-after-precheck-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyAddr(addr),
+		WithReadyProbeTimeout(2*time.Second))
+
+	select {
+	case <-fa.requestedCh:
+		// 按启动失败请求关机，符合预期
+	case <-time.After(5 * time.Second):
+		t.Fatal("port stolen after pre-check did not request shutdown")
+	}
+	if readyCalled.Load() != 0 {
+		t.Fatal("onReady must not fire when the port was stolen after pre-check (dial would hit the other process's listener)")
+	}
+	fa.cancel()
+}
+
 // reserveLoopbackAddr 取一个空闲的回环端口号（先 listen 再释放），供真实
 // server 绑定 —— 与 e2e startE2EServer 同口径。
 func reserveLoopbackAddr(t *testing.T) string {

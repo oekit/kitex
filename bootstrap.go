@@ -191,10 +191,12 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 					app.RequestShutdown()
 					return
 				}
-				// 就绪复核信号（#120）：预检 Close 与 kitex 真正 bind 之间端口
-				// 仍可能被抢占（TOCTOU），探活建连成功的可能是**对方**的监听器。
-				// kitex server 无 IsRunning 一类的自省 API，这里用两个可观测信号
-				// 对称 hertz 的复核：
+				// 就绪复核信号（#120；#137 系该 TOCTOU 的重报单，复审确认此修法
+				// 即其建议的第一种——「探活成功后复核 server 状态」：kitex 的
+				// server.Server 接口只有 Run/Stop/RegisterService/
+				// GetServiceInfos，**无 IsRunning 一类的自省 API**，故以双信号
+				// 复核替代）：预检 Close 与 kitex 真正 bind 之间端口仍可能被抢占
+				// （TOCTOU），探活建连成功的可能是**对方**的监听器。
 				//   - probeStarted：server.RegisterStartHook 注册的启动钩子——
 				//     kitex 在 listener 绑定成功、进入 serving **之后**才触发
 				//     （Run 内 svr.Start() 同步建 listener，失败立即走 errCh、
@@ -247,7 +249,9 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 	})
 }
 
-// checkProbeAddrFree 确认探活目标端口当前可绑定（#38 端口归属预检）。
+// checkProbeAddrFree 确认探活目标端口当前可绑定（#38 端口归属预检；预检通过
+// 不代表 bind 时仍空闲——Close 与 kitex bind 之间的抢占窗口由 probeAndReady
+// 的两阶段复核兜底，见 #120/#137）。
 //
 // 契约：WithReadyAddr 指向的必须是**本 server 自己绑定**的监听地址。端口被
 // 他人占用时，本进程 server 必然绑定失败（kitex 监听失败 → svr.Run() 返回
@@ -268,7 +272,8 @@ func checkProbeAddrFree(ctx context.Context, addr string) error {
 	return nil
 }
 
-// probeAndReady 探活目标地址，通过后执行 onReady。两阶段（#120，对称 hertz
+// probeAndReady 探活目标地址，通过后执行 onReady。两阶段（#120；#137 为该
+// TOCTOU 的重报单，复审确认两阶段复核已覆盖其场景，对称 hertz
 // probeAndReady 的 IsRunning 门与复核）：
 //
 //  1. 等待「已开始服务」的正向信号：started（RegisterStartHook 触发——kitex

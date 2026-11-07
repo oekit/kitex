@@ -2,6 +2,13 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.7.13] — 2026-11-08
+
+- test(bootstrap): #137 复审收口——预检 TOCTOU 补全链路回归钉（预检通过 → 他人抢占端口 → 本进程 bind 失败 ⇒ runDone 门拦截，不回调 onReady、按启动失败关机）；修复本体已于 v0.7.12 随 #120 落地（RegisterStartHook 门 + 建连后 runDone 复核——kitex server.Server 无 IsRunning 自省 API，复核采用 started/runDone 双信号），#137 系按旧实现状态的重报，注释引用同步补挂
+- docs(bootstrap): 预检/复核注释补挂 #137——「探活成功后复核 server 状态」的选型理由（无 IsRunning ⇒ 双信号复核）显式成文
+
+关联问题单：kitex#137。
+
 ## [observability/tracing/instrumentation/kitexotel/v0.7.13] — 2026-11-07
 
 - build: 父模块地板对齐（嵌套 go.mod 的父仓 require 跟随最新，audit 门禁项）
