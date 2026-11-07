@@ -37,3 +37,6 @@ Thumbs.db
 .mimosa/
 .v2c/
 .zcode/
+
+# Generator CLI local build artifact
+cmd/thrift2openapi/thrift2openapi
