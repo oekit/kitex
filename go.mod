@@ -23,7 +23,7 @@ require (
 
 require (
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/oekit/registry/nacosimpl v0.1.12 // indirect
+	github.com/oekit/registry/nacosimpl v0.1.13 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
