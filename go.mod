@@ -10,13 +10,13 @@ require (
 	github.com/kitex-contrib/monitor-prometheus v0.2.0
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507
-	github.com/oekit/bootstrap v0.7.3
+	github.com/oekit/bootstrap v0.7.4
 	github.com/oekit/concurrency v0.32.0
 	github.com/oekit/core v0.14.0
-	github.com/oekit/logx v0.9.1
-	github.com/oekit/metrics v0.2.2
-	github.com/oekit/nns v0.5.16
-	github.com/oekit/registry v0.5.12
+	github.com/oekit/logx v0.9.2
+	github.com/oekit/metrics v0.2.3
+	github.com/oekit/nns v0.5.17
+	github.com/oekit/registry v0.5.13
 	github.com/oekit/registry/nacos v0.1.12
 	github.com/prometheus/client_golang v1.25.0
 )
