@@ -206,8 +206,8 @@ github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507 h1:f
 github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507/go.mod h1:ygUBdt7eGeYBt6Lz2HO3wx7crKXk25Mp80568emGMWU=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
 github.com/nishanths/predeclared v0.0.0-20200524104333-86fad755b4d3/go.mod h1:nt3d53pc1VYcphSCIaYAJtnPYnr3Zyn8fMq2wvPGPso=
-github.com/oekit/bootstrap v0.7.4 h1:VyTc3Ew6Rzx04MhM5SzR/9rcxLUQKQxaHUbEovj/hU8=
-github.com/oekit/bootstrap v0.7.4/go.mod h1:pIaaR3PTOOiAgm4g0P3U1ktkk39kXrsrwxUd+KOwg1E=
+github.com/oekit/bootstrap v0.7.5 h1:Bm9ektG4FJ9IIHT7I4qshtYUhTzjnCmS5nnQZJZPZCk=
+github.com/oekit/bootstrap v0.7.5/go.mod h1:pIaaR3PTOOiAgm4g0P3U1ktkk39kXrsrwxUd+KOwg1E=
 github.com/oekit/concurrency v0.32.0 h1:Mj8+L9eU9uzDP/UB6DV4ujcjWvYm7HxwfZ765UnTtaw=
 github.com/oekit/concurrency v0.32.0/go.mod h1:fJU9ZyntXOIEk2EEWpRgc/TDagJnvoDmNePiSpSo720=
 github.com/oekit/core v0.14.0 h1:8WCA2IKby8ovvQx8IvMhO+LIWjdEjkSQJvBPkmFLuNg=
