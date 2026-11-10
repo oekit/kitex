@@ -2,6 +2,10 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.7.15] — 2026-11-10
+
+- - build: 依赖地板对齐（floor sync，无代码变更）
+
 ## [observability/tracing/instrumentation/kitexotel/v0.7.14] — 2026-11-08
 
 - build: 依赖地板对齐——本版把 oekit 依赖地板抬到各依赖当前最新已发布版本（matrix-tools/scripts/align_floors.py 维护轮）
