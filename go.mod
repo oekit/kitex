@@ -9,7 +9,7 @@ require (
 	github.com/cloudwego/kitex v0.16.4
 	github.com/kitex-contrib/monitor-prometheus v0.2.0
 	github.com/kitex-contrib/resolver-dns v0.1.0
-	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6-0.20260601044846-0e3d1d099507
+	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6
 	github.com/oekit/bootstrap v0.7.6
 	github.com/oekit/concurrency v0.33.0
 	github.com/oekit/core v0.14.2
