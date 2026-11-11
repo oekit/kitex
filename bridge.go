@@ -282,11 +282,3 @@ func FromKitexError(err error) (*ekiterr.BizError, bool) {
 
 	return nil, false
 }
-
-// IsKitexTimeoutError 包装 kerrors.IsTimeoutError,提供不直接 import
-// kitex kerrors 的判定入口。
-//
-// 官方依据:best-practice/error_handle (Kitex 内部错误章节"判断具体错误类型")
-func IsKitexTimeoutError(err error) bool {
-	return kerrors.IsTimeoutError(err)
-}

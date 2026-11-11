@@ -30,60 +30,91 @@ type Server struct {
 	URL string `yaml:"url" json:"url"`
 }
 
-// PathItems 是有序路径表：map 会让 YAML key 随机序，golden 测试无法钉。
-type PathItems struct {
-	items map[string]*PathItem
+// orderedTable 是「插入序 map」的泛型基座（#187）：OpenAPI 文档的 map 型字段
+// （paths/responses/content/schemas/securitySchemes/properties）要求生成结果
+// 逐字节稳定（map 遍历序随机，golden 测试无法钉），故一律收编为本类型——
+// Set/Delete/Len/MarshalYAML/MarshalJSON 五件套只实现这一份，各具名表类型
+// 以薄包装嵌入复用。
+type orderedTable[T any] struct {
+	items map[string]T
 	keys  []string
 }
 
-func NewPathItems() *PathItems { return &PathItems{items: map[string]*PathItem{}} }
-
-// Get 取路径项，不存在时创建（保持首次插入序）。
-func (p *PathItems) Get(path string) *PathItem {
-	if pi, ok := p.items[path]; ok {
-		return pi
-	}
-	pi := &PathItem{}
-	p.items[path] = pi
-	p.keys = append(p.keys, path)
-	return pi
+func newOrderedTable[T any]() orderedTable[T] {
+	return orderedTable[T]{items: map[string]T{}}
 }
 
-// Delete 移除路径项（路由豁免）。
-func (p *PathItems) Delete(path string) {
-	if _, ok := p.items[path]; ok {
-		delete(p.items, path)
-		for i, k := range p.keys {
-			if k == path {
-				p.keys = append(p.keys[:i], p.keys[i+1:]...)
-				break
-			}
+// Get 取表项；不存在返回零值与 false。
+func (t *orderedTable[T]) Get(key string) (T, bool) {
+	v, ok := t.items[key]
+	return v, ok
+}
+
+// Set 写入表项（保持首次插入序）。
+func (t *orderedTable[T]) Set(key string, val T) {
+	if t.items == nil {
+		t.items = map[string]T{}
+	}
+	if _, ok := t.items[key]; !ok {
+		t.keys = append(t.keys, key)
+	}
+	t.items[key] = val
+}
+
+// Delete 移除表项（保持其余项插入序）。
+func (t *orderedTable[T]) Delete(key string) {
+	if _, ok := t.items[key]; !ok {
+		return
+	}
+	delete(t.items, key)
+	for i, k := range t.keys {
+		if k == key {
+			t.keys = append(t.keys[:i], t.keys[i+1:]...)
+			break
 		}
 	}
 }
 
-// Len 路径数量。
-func (p *PathItems) Len() int { return len(p.keys) }
+// Len 表项数量。
+func (t *orderedTable[T]) Len() int { return len(t.keys) }
 
 // MarshalYAML 按插入序输出 map。
-func (p *PathItems) MarshalYAML() (interface{}, error) {
+func (t *orderedTable[T]) MarshalYAML() (any, error) {
 	out := &yamlMapSlice{}
-	for _, k := range p.keys {
-		out.set(k, p.items[k])
+	for _, k := range t.keys {
+		out.set(k, t.items[k])
 	}
 	return out, nil
 }
 
 // MarshalJSON 按插入序输出 object。
-func (p *PathItems) MarshalJSON() ([]byte, error) {
+func (t *orderedTable[T]) MarshalJSON() ([]byte, error) {
 	return marshalOrderedJSON(func(set func(k string, v any) error) error {
-		for _, k := range p.keys {
-			if err := set(k, p.items[k]); err != nil {
+		for _, k := range t.keys {
+			if err := set(k, t.items[k]); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+// PathItems 是有序路径表。
+type PathItems struct {
+	orderedTable[*PathItem]
+}
+
+func NewPathItems() *PathItems { return &PathItems{orderedTable: newOrderedTable[*PathItem]()} }
+
+// Get 取路径项，不存在时创建（保持首次插入序）——「Get 即挂载」是路径表
+// 独有语义，故保留为本类型方法（#187）。
+func (p *PathItems) Get(path string) *PathItem {
+	if pi, ok := p.items[path]; ok {
+		return pi
+	}
+	pi := &PathItem{}
+	p.Set(path, pi)
+	return pi
 }
 
 // PathItem 单路径下的方法集。
@@ -125,40 +156,10 @@ type RequestBody struct {
 
 // Responses 有序响应表（通常只有 200 与 default）。
 type Responses struct {
-	items map[string]*Response
-	keys  []string
+	orderedTable[*Response]
 }
 
-func NewResponses() *Responses { return &Responses{items: map[string]*Response{}} }
-
-// Set 写入响应（保持首次插入序）。
-func (r *Responses) Set(code string, resp *Response) {
-	if _, ok := r.items[code]; !ok {
-		r.keys = append(r.keys, code)
-	}
-	r.items[code] = resp
-}
-
-// MarshalYAML 按插入序输出 map。
-func (r *Responses) MarshalYAML() (interface{}, error) {
-	out := &yamlMapSlice{}
-	for _, k := range r.keys {
-		out.set(k, r.items[k])
-	}
-	return out, nil
-}
-
-// MarshalJSON 按插入序输出 object。
-func (r *Responses) MarshalJSON() ([]byte, error) {
-	return marshalOrderedJSON(func(set func(k string, v any) error) error {
-		for _, k := range r.keys {
-			if err := set(k, r.items[k]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
+func NewResponses() *Responses { return &Responses{orderedTable: newOrderedTable[*Response]()} }
 
 // Response 单个响应。
 type Response struct {
@@ -168,40 +169,10 @@ type Response struct {
 
 // MediaTypes 有序 content 表（application/json → schema）。
 type MediaTypes struct {
-	items map[string]*MediaType
-	keys  []string
+	orderedTable[*MediaType]
 }
 
-func NewMediaTypes() *MediaTypes { return &MediaTypes{items: map[string]*MediaType{}} }
-
-// Set 写入媒体类型。
-func (m *MediaTypes) Set(name string, mt *MediaType) {
-	if _, ok := m.items[name]; !ok {
-		m.keys = append(m.keys, name)
-	}
-	m.items[name] = mt
-}
-
-// MarshalYAML 按插入序输出 map。
-func (m *MediaTypes) MarshalYAML() (interface{}, error) {
-	out := &yamlMapSlice{}
-	for _, k := range m.keys {
-		out.set(k, m.items[k])
-	}
-	return out, nil
-}
-
-// MarshalJSON 按插入序输出 object。
-func (m *MediaTypes) MarshalJSON() ([]byte, error) {
-	return marshalOrderedJSON(func(set func(k string, v any) error) error {
-		for _, k := range m.keys {
-			if err := set(k, m.items[k]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
+func NewMediaTypes() *MediaTypes { return &MediaTypes{orderedTable: newOrderedTable[*MediaType]()} }
 
 // MediaType 媒体类型载荷。
 type MediaType struct {
@@ -257,86 +228,26 @@ type Components struct {
 
 // SchemaTable 有序 schema 表。
 type SchemaTable struct {
-	items map[string]*Schema
-	keys  []string
+	orderedTable[*Schema]
 }
 
-func NewSchemaTable() *SchemaTable { return &SchemaTable{items: map[string]*Schema{}} }
+func NewSchemaTable() *SchemaTable { return &SchemaTable{orderedTable: newOrderedTable[*Schema]()} }
 
 // Get 取 schema（不存在返回 nil）。
 func (t *SchemaTable) Get(name string) *Schema { return t.items[name] }
 
-// Set 写入 schema（保持首次插入序）。
-func (t *SchemaTable) Set(name string, s *Schema) {
-	if _, ok := t.items[name]; !ok {
-		t.keys = append(t.keys, name)
-	}
-	t.items[name] = s
-}
-
-// MarshalYAML 按插入序输出 map。
-func (t *SchemaTable) MarshalYAML() (interface{}, error) {
-	out := &yamlMapSlice{}
-	for _, k := range t.keys {
-		out.set(k, t.items[k])
-	}
-	return out, nil
-}
-
-// MarshalJSON 按插入序输出 object。
-func (t *SchemaTable) MarshalJSON() ([]byte, error) {
-	return marshalOrderedJSON(func(set func(k string, v any) error) error {
-		for _, k := range t.keys {
-			if err := set(k, t.items[k]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 // SecuritySchemeTable 有序 securitySchemes 表。
 type SecuritySchemeTable struct {
-	items map[string]*SecurityScheme
-	keys  []string
+	orderedTable[*SecurityScheme]
 }
 
 // NewSecuritySchemeTable 构造有序 securitySchemes 表。
 func NewSecuritySchemeTable() *SecuritySchemeTable {
-	return &SecuritySchemeTable{items: map[string]*SecurityScheme{}}
+	return &SecuritySchemeTable{orderedTable: newOrderedTable[*SecurityScheme]()}
 }
 
 // Get 取安全方案（不存在返回 nil）。
 func (t *SecuritySchemeTable) Get(name string) *SecurityScheme { return t.items[name] }
-
-// Set 写入安全方案。
-func (t *SecuritySchemeTable) Set(name string, s *SecurityScheme) {
-	if _, ok := t.items[name]; !ok {
-		t.keys = append(t.keys, name)
-	}
-	t.items[name] = s
-}
-
-// MarshalYAML 按插入序输出 map。
-func (t *SecuritySchemeTable) MarshalYAML() (interface{}, error) {
-	out := &yamlMapSlice{}
-	for _, k := range t.keys {
-		out.set(k, t.items[k])
-	}
-	return out, nil
-}
-
-// MarshalJSON 按插入序输出 object。
-func (t *SecuritySchemeTable) MarshalJSON() ([]byte, error) {
-	return marshalOrderedJSON(func(set func(k string, v any) error) error {
-		for _, k := range t.keys {
-			if err := set(k, t.items[k]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
 
 // SecurityScheme bearer 鉴权方案。
 type SecurityScheme struct {
@@ -364,46 +275,13 @@ type Schema struct {
 
 // Properties 有序属性表（与 struct 字段序一致）。
 type Properties struct {
-	items map[string]*Schema
-	keys  []string
+	orderedTable[*Schema]
 }
 
-func NewProperties() *Properties { return &Properties{items: map[string]*Schema{}} }
+func NewProperties() *Properties { return &Properties{orderedTable: newOrderedTable[*Schema]()} }
 
-// Set 写入属性。
-func (p *Properties) Set(name string, s *Schema) {
-	if _, ok := p.items[name]; !ok {
-		p.keys = append(p.keys, name)
-	}
-	p.items[name] = s
-}
-
-// Get 取属性。
+// Get 取属性（不存在返回 nil）。
 func (p *Properties) Get(name string) *Schema { return p.items[name] }
-
-// Len 属性数量。
-func (p *Properties) Len() int { return len(p.keys) }
-
-// MarshalYAML 按插入序输出 map。
-func (p *Properties) MarshalYAML() (interface{}, error) {
-	out := &yamlMapSlice{}
-	for _, k := range p.keys {
-		out.set(k, p.items[k])
-	}
-	return out, nil
-}
-
-// MarshalJSON 按插入序输出 object。
-func (p *Properties) MarshalJSON() ([]byte, error) {
-	return marshalOrderedJSON(func(set func(k string, v any) error) error {
-		for _, k := range p.keys {
-			if err := set(k, p.items[k]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
 
 // refSchema 构造 $ref schema。
 func refSchema(name string) *Schema {

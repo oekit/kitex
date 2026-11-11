@@ -56,9 +56,9 @@ func storedCBConfigs(t *testing.T, cbs *circuitbreak.CBSuite) map[string]circuit
 // 被删除的 method 必须恢复 kitex 默认熔断参数（CBSuite 无删除 API）。
 func TestCBApplier_RemovedMethodRestoresDefault(t *testing.T) {
 	cbs := circuitbreak.NewCBSuite(methodCBKey)
-	a := &cbConfigApplier{cbs: cbs}
+	a := newCBConfigApplier(cbs)
 
-	a.apply(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100},"m2":{"enable":true,"err_rate":0.4,"min_sample":200}}`)
+	a.applyConfig(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100},"m2":{"enable":true,"err_rate":0.4,"min_sample":200}}`)
 
 	stored := storedCBConfigs(t, cbs)
 	if len(stored) != 2 {
@@ -69,7 +69,7 @@ func TestCBApplier_RemovedMethodRestoresDefault(t *testing.T) {
 	}
 
 	// 第二轮配置删除 m2 → m2 必须恢复默认
-	a.apply(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100}}`)
+	a.applyConfig(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100}}`)
 
 	stored = storedCBConfigs(t, cbs)
 	def := circuitbreak.GetDefaultCBConfig()
@@ -81,10 +81,10 @@ func TestCBApplier_RemovedMethodRestoresDefault(t *testing.T) {
 // TestCBApplier_BadJSONKeepsPrevState 验证解析失败时不改动上一轮已应用的配置。
 func TestCBApplier_BadJSONKeepsPrevState(t *testing.T) {
 	cbs := circuitbreak.NewCBSuite(methodCBKey)
-	a := &cbConfigApplier{cbs: cbs}
+	a := newCBConfigApplier(cbs)
 
-	a.apply(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100}}`)
-	if n := a.apply("not-json{"); n != -1 {
+	a.applyConfig(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100}}`)
+	if n := a.applyConfig("not-json{"); n != -1 {
 		t.Errorf("apply(bad json) = %d, want -1", n)
 	}
 
@@ -99,10 +99,10 @@ func TestCBApplier_BadJSONKeepsPrevState(t *testing.T) {
 // 钉住：null 按删除处理，恢复 kitex 默认熔断参数。
 func TestCBApplier_NullValueTreatedAsRemoval(t *testing.T) {
 	cbs := circuitbreak.NewCBSuite(methodCBKey)
-	a := &cbConfigApplier{cbs: cbs}
+	a := newCBConfigApplier(cbs)
 
-	a.apply(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100}}`)
-	a.apply(`{"m1":null}`)
+	a.applyConfig(`{"m1":{"enable":true,"err_rate":0.3,"min_sample":100}}`)
+	a.applyConfig(`{"m1":null}`)
 
 	stored := storedCBConfigs(t, cbs)
 	def := circuitbreak.GetDefaultCBConfig()

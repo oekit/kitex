@@ -289,22 +289,6 @@ func TestFromKitexError_PriorityBizOverTimeout(t *testing.T) {
 	}
 }
 
-// TestIsKitexTimeoutError 验证 IsKitexTimeoutError 包装正确。
-func TestIsKitexTimeoutError(t *testing.T) {
-	if !IsKitexTimeoutError(kerrors.ErrRPCTimeout) {
-		t.Error("IsKitexTimeoutError(ErrRPCTimeout) = false, want true")
-	}
-	if IsKitexTimeoutError(kerrors.ErrNoMoreInstance) {
-		t.Error("IsKitexTimeoutError(ErrNoMoreInstance) = true, want false")
-	}
-	if IsKitexTimeoutError(nil) {
-		t.Error("IsKitexTimeoutError(nil) = true, want false")
-	}
-	if IsKitexTimeoutError(errors.New("plain")) {
-		t.Error("IsKitexTimeoutError(plain) = true, want false")
-	}
-}
-
 // TestFromKitexError_ThriftErrorCodes 覆盖 kitex 文档 best-practice/error_handle
 // 列出的 8 个 Thrift 错误码。这些错误在 Kitex 内部会被包装为 DetailedError,
 // 走 FromKitexError 的 DetailedError 兜底分支。

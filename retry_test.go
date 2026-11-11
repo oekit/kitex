@@ -51,16 +51,16 @@ func TestClientSuite_Close(t *testing.T) {
 // 被删除的 method 必须从容器删除策略（回退为不重试），而非永久保留旧策略。
 func TestRetryApplier_RemovedMethodDeletesPolicy(t *testing.T) {
 	rc := retry.NewRetryContainer()
-	a := &retryPolicyApplier{rc: rc}
+	a := newRetryPolicyApplier(rc)
 
-	a.apply(`{"m1":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":2}}}}`)
+	a.applyConfig(`{"m1":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":2}}}}`)
 
 	if !dumpRetryKeys(t, rc)["m1"] {
 		t.Fatalf("expected m1 retryer registered")
 	}
 
 	// 第二轮配置删除 m1 → m1 策略必须被删除
-	a.apply(`{"m2":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":1}}}}`)
+	a.applyConfig(`{"m2":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":1}}}}`)
 
 	keys := dumpRetryKeys(t, rc)
 	if keys["m1"] {
@@ -74,10 +74,10 @@ func TestRetryApplier_RemovedMethodDeletesPolicy(t *testing.T) {
 // TestRetryApplier_BadJSONKeepsPrevState 验证解析失败时不改动上一轮已应用的策略。
 func TestRetryApplier_BadJSONKeepsPrevState(t *testing.T) {
 	rc := retry.NewRetryContainer()
-	a := &retryPolicyApplier{rc: rc}
+	a := newRetryPolicyApplier(rc)
 
-	a.apply(`{"m1":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":2}}}}`)
-	if n := a.apply("not-json{"); n != -1 {
+	a.applyConfig(`{"m1":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":2}}}}`)
+	if n := a.applyConfig("not-json{"); n != -1 {
 		t.Errorf("apply(bad json) = %d, want -1", n)
 	}
 

@@ -2,7 +2,6 @@ package kitex
 
 import (
 	"encoding/json"
-	"sync"
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/circuitbreak"
@@ -20,49 +19,38 @@ func methodCBKey(ri rpcinfo.RPCInfo) string {
 	return ri.To().Method()
 }
 
-// cbConfigApplier 把 Nacos circuit_break 配置全量应用到 CBSuite。
+// newCBConfigApplier 构造 circuit_break 配置的全量同步 applier。
 // kitex CBSuite 没有删除 API，配置中被移除的 method 用默认参数覆盖，
-// 与 rpc_timeout 的整表替换保持一致的全量同步语义。
-type cbConfigApplier struct {
-	cbs *circuitbreak.CBSuite
-
-	mu   sync.Mutex // OnChange 异步触发，串行化对 prev 的访问
-	prev map[string]struct{}
-}
-
-// apply 解析并应用一轮配置，返回配置中的 method 数；解析失败返回 -1，
-// 并保留上一轮已应用的状态。
-func (a *cbConfigApplier) apply(data string) int {
-	var rawConfigs map[string]*circuitbreak.CBConfig
-	if err := json.Unmarshal([]byte(data), &rawConfigs); err != nil {
-		govLog.Error("parse circuit_break config failed", "err", err)
-		return -1
+// 与 rpc_timeout 的整表替换保持一致的全量同步语义；diff/prev/mutex
+// 骨架收编在 fullSyncApplier（#185）。
+func newCBConfigApplier(cbs *circuitbreak.CBSuite) *fullSyncApplier[*circuitbreak.CBConfig] {
+	return &fullSyncApplier[*circuitbreak.CBConfig]{
+		parse: func(data string) (map[string]*circuitbreak.CBConfig, error) {
+			var raw map[string]*circuitbreak.CBConfig
+			if err := json.Unmarshal([]byte(data), &raw); err != nil {
+				return nil, err
+			}
+			return raw, nil
+		},
+		// 用指针解析以区分 null 与零值对象：null 曾被当成零值 CBConfig
+		// （Enable=false）应用——等于对该方法关闭熔断；null 按删除处理。
+		normalize: func(method string, cfg *circuitbreak.CBConfig) bool {
+			if cfg == nil {
+				govLog.Warn("circuit_break config null value treated as removal", "method", method)
+				return false
+			}
+			return true
+		},
+		apply: func(method string, cfg *circuitbreak.CBConfig) {
+			cbs.UpdateServiceCBConfig(method, *cfg)
+		},
+		remove: func(method string) {
+			cbs.UpdateServiceCBConfig(method, circuitbreak.GetDefaultCBConfig())
+		},
+		onParseError: func(err error) {
+			govLog.Error("parse circuit_break config failed", "err", err)
+		},
 	}
-	// 用指针解析以区分 null 与零值对象：null 曾被当成零值 CBConfig
-	// （Enable=false）应用——等于对该方法关闭熔断；null 按删除处理。
-	configs := make(map[string]circuitbreak.CBConfig, len(rawConfigs))
-	for method, cfg := range rawConfigs {
-		if cfg == nil {
-			govLog.Warn("circuit_break config null value treated as removal", "method", method)
-			continue
-		}
-		configs[method] = *cfg
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for method := range a.prev {
-		if _, ok := configs[method]; !ok {
-			a.cbs.UpdateServiceCBConfig(method, circuitbreak.GetDefaultCBConfig())
-		}
-	}
-	for method, cfg := range configs {
-		a.cbs.UpdateServiceCBConfig(method, cfg)
-	}
-	a.prev = make(map[string]struct{}, len(configs))
-	for method := range configs {
-		a.prev[method] = struct{}{}
-	}
-	return len(configs)
 }
 
 // withCircuitBreaker 订阅 Nacos circuit_break 配置并注入 circuitbreak.CBSuite。
@@ -79,10 +67,10 @@ func (a *cbConfigApplier) apply(data string) int {
 func withCircuitBreaker(clientService, serverService string, gov *GovernanceConfig, m *resilience.Metrics) ([]client.Option, func() error) {
 	cbs := circuitbreak.NewCBSuite(methodCBKey)
 	dataID := gov.clientDataID(clientService, serverService, "circuit_break")
-	applier := &cbConfigApplier{cbs: cbs}
+	applier := newCBConfigApplier(cbs)
 
 	if err := gov.subscribe(dataID, func(data string) {
-		if n := applier.apply(data); n >= 0 {
+		if n := applier.applyConfig(data); n >= 0 {
 			govLog.Info("circuit_break config updated", "dataId", dataID, "methods", n)
 		}
 	}); err != nil {

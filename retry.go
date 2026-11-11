@@ -2,45 +2,33 @@ package kitex
 
 import (
 	"encoding/json"
-	"sync"
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/retry"
 )
 
-// retryPolicyApplier 把 Nacos retry 配置全量应用到 retry.Container。
-// 配置中被移除的 method 调 DeletePolicy 删除（回退为不重试），
-// 与 rpc_timeout 的整表替换保持一致的全量同步语义。
-type retryPolicyApplier struct {
-	rc *retry.Container
-
-	mu   sync.Mutex // OnChange 异步触发，串行化对 prev 的访问
-	prev map[string]struct{}
-}
-
-// apply 解析并应用一轮配置，返回配置中的 method 数；解析失败返回 -1，
-// 并保留上一轮已应用的策略。
-func (a *retryPolicyApplier) apply(data string) int {
-	var policies map[string]retry.Policy
-	if err := json.Unmarshal([]byte(data), &policies); err != nil {
-		govLog.Error("parse retry config failed", "err", err)
-		return -1
+// newRetryPolicyApplier 构造 retry 配置的全量同步 applier：配置中被移除的
+// method 调 DeletePolicy 删除（回退为不重试），与 rpc_timeout 的整表替换
+// 保持一致的全量同步语义；diff/prev/mutex 骨架收编在 fullSyncApplier（#185）。
+func newRetryPolicyApplier(rc *retry.Container) *fullSyncApplier[retry.Policy] {
+	return &fullSyncApplier[retry.Policy]{
+		parse: func(data string) (map[string]retry.Policy, error) {
+			var policies map[string]retry.Policy
+			if err := json.Unmarshal([]byte(data), &policies); err != nil {
+				return nil, err
+			}
+			return policies, nil
+		},
+		apply: func(method string, p retry.Policy) {
+			rc.NotifyPolicyChange(method, p)
+		},
+		remove: func(method string) {
+			rc.DeletePolicy(method)
+		},
+		onParseError: func(err error) {
+			govLog.Error("parse retry config failed", "err", err)
+		},
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for method := range a.prev {
-		if _, ok := policies[method]; !ok {
-			a.rc.DeletePolicy(method)
-		}
-	}
-	for method, p := range policies {
-		a.rc.NotifyPolicyChange(method, p)
-	}
-	a.prev = make(map[string]struct{}, len(policies))
-	for method := range policies {
-		a.prev[method] = struct{}{}
-	}
-	return len(policies)
 }
 
 // withRetry 订阅 Nacos retry 配置并注入 retry.Container。
@@ -65,10 +53,10 @@ func withRetry(clientService, serverService string, gov *GovernanceConfig) ([]cl
 	// 官方推荐初始化器：内置重试比例熔断，故障风暴时按错误率停止重试
 	rc := retry.NewRetryContainerWithPercentageLimit()
 	dataID := gov.clientDataID(clientService, serverService, "retry")
-	applier := &retryPolicyApplier{rc: rc}
+	applier := newRetryPolicyApplier(rc)
 
 	if err := gov.subscribe(dataID, func(data string) {
-		if n := applier.apply(data); n >= 0 {
+		if n := applier.applyConfig(data); n >= 0 {
 			govLog.Info("retry config updated", "dataId", dataID, "methods", n)
 		}
 	}); err != nil {

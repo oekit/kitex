@@ -5,6 +5,10 @@
 // 与 next（包内私有键），chain.Handler 终端闭包取出后调用 next 并把真实
 // 错误透传——出参回填与错误语义均与 kitex 直连一致。
 //
+// 对 core/transport 的依赖由 transportx 承载（ServerContext 经
+// transportx.ServerContext → transport.NewServerContext 注入 server
+// Transporter，ctx 契约与 hertz 侧一致）；本包不直接 import transport。
+//
 // 用法：
 //
 //	svr := server.New(server.WithMiddleware(chainmw.ToKitex(chain.Recovery())))
@@ -15,7 +19,6 @@ import (
 	"errors"
 
 	"github.com/oekit/core/chain"
-	"github.com/oekit/core/transport"
 	"github.com/oekit/kitex/transportx"
 )
 
@@ -69,6 +72,3 @@ func ServerContext(method string) kitexMiddleware {
 		}
 	}
 }
-
-// 确保 transport 引用不悬空（ServerContext 已间接依赖）。
-var _ = transport.NoopHeader{}
