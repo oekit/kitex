@@ -1,6 +1,6 @@
 module github.com/oekit/kitex/cmd/thrift2openapi
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/cloudwego/thriftgo v0.4.5

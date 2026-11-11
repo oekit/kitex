@@ -23,6 +23,20 @@ import (
 	"github.com/cloudwego/thriftgo/parser"
 )
 
+// paramKinds 表驱动 api.* 参数注解 → OpenAPI 参数位置（#186）。
+// required=true 表示无视字段 Requiredness 一律必填（path 参数在 OpenAPI
+// 中恒必填）；表序即判定优先级（一个字段命中首个存在的注解）。
+var paramKinds = []struct {
+	anno     string
+	in       string
+	required bool
+}{
+	{anno: "api.query", in: "query"},
+	{anno: "api.path", in: "path", required: true},
+	{anno: "api.header", in: "header"},
+	{anno: "api.cookie", in: "cookie"},
+}
+
 // Options 是生成配置（main 由 CLI flag 填充，测试直接构造）。
 type Options struct {
 	// Title/Version/Description 写入 info；Title 缺省取第一个 service 名。
@@ -106,7 +120,7 @@ func (g *generator) run() error {
 	for _, p := range g.opts.ExemptPaths {
 		g.doc.Paths.Delete(p)
 	}
-	if g.schemas.len() > 0 || g.opts.AuthScheme != "" {
+	if g.schemas.Len() > 0 || g.opts.AuthScheme != "" {
 		g.doc.Components = &Components{Schemas: g.schemas}
 	}
 	if g.opts.AuthScheme != "" {
@@ -214,30 +228,27 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 				return nil, fmt.Errorf("field %s: %w", f.Name, err)
 			}
 			applyDefault(s, f.Default)
+			// api.query/path/header/cookie 四个 case 逐行同构（#186）：表驱动收敛，
+			// 单一循环内一次扫描同时判存在与取名；新增参数位置（如 api.grpc）
+			// 只加一行 paramKinds 表项。
+			matched := false
+			for _, pk := range paramKinds {
+				v, ok := annoLookup(f.Annotations, pk.anno)
+				if !ok {
+					continue
+				}
+				if v != "" {
+					name = v
+				}
+				params = append(params, &Param{Name: name, In: pk.in, Description: desc,
+					Required: pk.required || f.Requiredness == parser.FieldType_Required, Schema: s})
+				matched = true
+				break
+			}
+			if matched {
+				continue
+			}
 			switch {
-			case hasAnno(f.Annotations, "api.query"):
-				if v, ok := annoValue(f.Annotations, "api.query"); ok && v != "" {
-					name = v
-				}
-				params = append(params, &Param{Name: name, In: "query", Description: desc,
-					Required: f.Requiredness == parser.FieldType_Required, Schema: s})
-			case hasAnno(f.Annotations, "api.path"):
-				if v, ok := annoValue(f.Annotations, "api.path"); ok && v != "" {
-					name = v
-				}
-				params = append(params, &Param{Name: name, In: "path", Description: desc, Required: true, Schema: s})
-			case hasAnno(f.Annotations, "api.header"):
-				if v, ok := annoValue(f.Annotations, "api.header"); ok && v != "" {
-					name = v
-				}
-				params = append(params, &Param{Name: name, In: "header", Description: desc,
-					Required: f.Requiredness == parser.FieldType_Required, Schema: s})
-			case hasAnno(f.Annotations, "api.cookie"):
-				if v, ok := annoValue(f.Annotations, "api.cookie"); ok && v != "" {
-					name = v
-				}
-				params = append(params, &Param{Name: name, In: "cookie", Description: desc,
-					Required: f.Requiredness == parser.FieldType_Required, Schema: s})
 			case hasAnno(f.Annotations, "api.form"), hasAnno(f.Annotations, "api.file"):
 				if formProps == nil {
 					formProps = NewProperties()
@@ -517,6 +528,19 @@ func (g *generator) splitRef(name string) (*parser.Thrift, string) {
 	return g.ast, name
 }
 
+// annoLookup 单次扫描返回注解存在性与首个值；bare 注解（无值）返回 ("", true)。
+func annoLookup(annos parser.Annotations, key string) (string, bool) {
+	for _, a := range annos {
+		if a.Key == key {
+			if len(a.Values) > 0 {
+				return a.Values[0], true
+			}
+			return "", true
+		}
+	}
+	return "", false
+}
+
 // annoValue 取注解首个值。
 func annoValue(annos parser.Annotations, key string) (string, bool) {
 	for _, a := range annos {
@@ -529,12 +553,8 @@ func annoValue(annos parser.Annotations, key string) (string, bool) {
 
 // hasAnno 判断注解是否存在（值可为空）。
 func hasAnno(annos parser.Annotations, key string) bool {
-	for _, a := range annos {
-		if a.Key == key {
-			return true
-		}
-	}
-	return false
+	_, ok := annoLookup(annos, key)
+	return ok
 }
 
 // truthy 宽松布尔："true"/"1"/"yes"。
@@ -595,9 +615,6 @@ func respDesc(fn *parser.Function) string {
 	}
 	return "成功响应"
 }
-
-// len 返回 schema 数量。
-func (t *SchemaTable) len() int { return len(t.keys) }
 
 // decorateSchema 给请求体属性 schema 补 description 与 default（参数的
 // description 在 Param 层，不重复）。$ref schema 不加描述（OpenAPI 3.0 中

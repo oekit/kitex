@@ -48,9 +48,6 @@ func WithGovernanceGroup(group string) GovernanceOption {
 	return func(g *GovernanceConfig) { g.group = group }
 }
 
-// WithDataIDTemplate 设置 dataId 模板，支持占位符 {client}、{server}、{category}。
-// 默认 "{client}.{server}.{category}"（客户端）和 "{server}.{category}"（服务端）。
-// 传入的模板同时用于客户端；服务端模板会自动去掉 "{client}." 前缀。
 // WithGovernanceTemplate 订阅**统一治理模板**(governance 包 schema,
 // audit 5.2 阶段 2):单 dataID 承载全部类别,template 中 timeout_ms 应用到
 // rpctimeout 容器(经 TemplateTimeoutOptions 取 client.Option);retry/
@@ -59,6 +56,9 @@ func WithGovernanceTemplate(dataID string) GovernanceOption {
 	return func(g *GovernanceConfig) { g.templateDataID = dataID }
 }
 
+// WithDataIDTemplate 设置 dataId 模板，支持占位符 {client}、{server}、{category}。
+// 默认 "{client}.{server}.{category}"（客户端）和 "{server}.{category}"（服务端）。
+// 传入的模板同时用于客户端；服务端模板会自动去掉 "{client}." 前缀。
 func WithDataIDTemplate(tmpl string) GovernanceOption {
 	return func(g *GovernanceConfig) {
 		g.clientTmpl = tmpl
