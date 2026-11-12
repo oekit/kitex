@@ -18,7 +18,7 @@ require (
 	github.com/oekit/nns v0.8.0
 	github.com/oekit/registry v0.5.15
 	github.com/oekit/registry/nacos v0.1.14
-	github.com/oekit/tracing v0.4.1
+	github.com/oekit/tracing v0.4.2
 	github.com/prometheus/client_golang v1.25.0
 )
 
