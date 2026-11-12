@@ -1,12 +1,15 @@
-// Package kitexmeta 桥接 kitex transmeta 体系 + ekit traceid,让
-// trace_id / 用户身份 / 空间码等业务元数据在 kitex server 入口注入
-// 到 ctx,通过 kitex client transmeta 自动透传到下游 server。
+// Package kitexmeta 桥接 kitex transmeta 体系 + traceid(oekit/tracing,
+// trace_id 真相源),让 trace_id / 用户身份 / 空间码等业务元数据在 kitex
+// server 入口注入到 ctx,通过 kitex client transmeta 自动透传到下游 server。
 //
 // 设计:
 //   - 配合 kitexotel(P2-2 client / P9-1 server): OTel trace + 自定义
 //     metainfo 全链路
-//   - 配合 ekit middleware/traceid: 业务在 gin/hertz 入口调
-//     traceid.ContextWith 即可,无需在每个 RPC client 手动注入
+//   - 配合 traceid(github.com/oekit/tracing/traceid): 业务在 gin/hertz
+//     入口调 traceid.ContextWith 即可,无需在每个 RPC client 手动注入
+//     ——trace_id 的 ctx 键以 traceid 包为**单一真相源**(本包注入/提取
+//     全部委托该包,#198:此前自持私有键与 traceid 键类型不同,经
+//     traceid.ContextWith 注入的值永远取不到,链路静默断链)
 //
 // 官方依据:
 //   - https://www.cloudwego.io/zh/docs/kitex/tutorials/framework-exten/transmeta/
@@ -22,6 +25,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/transmeta"
 	"github.com/cloudwego/kitex/transport"
+	"github.com/oekit/tracing/traceid"
 )
 
 // MetaKeyExtractor 是从 ctx 提取业务 metainfo key-value 的函数。
@@ -36,23 +40,23 @@ type MetaKeyExtractor func(ctx context.Context) (key, value string, ok bool)
 // x-trace-id / x-request-id / x-user-id / x-space-code / x-tenant-id)。
 const traceIDMetaKey = "x-trace-id"
 
-// traceIDKey 是 ekit 自己的 traceid ctx key(避免 import middleware/traceid 循环)。
-type traceIDKey struct{}
-
-// ContextWithTraceID 把 trace_id 注入 ctx(ekit 内部 helper,跟
-// middleware/traceid.ContextWith 等价但 ekit SDK 基础包禁止 import 上层包)。
-// 业务用 metainfo.ContextWithTraceID(ctx, id) 替代。
+// ContextWithTraceID 把 trace_id 注入 ctx:直接委托 traceid.ContextWith
+// (单一真相源键,#198)——本包与 traceid.ContextWith 完全等价,业务任选;
+// 此前经本函数注入的值由 TraceIDFromContext 经同一键读回,行为兼容。
 func ContextWithTraceID(ctx context.Context, traceID string) context.Context {
-	return context.WithValue(ctx, traceIDKey{}, traceID)
+	return traceid.ContextWith(ctx, traceID)
 }
 
-// TraceIDFromContext 提取 ctx 里 ekit 注入的 trace_id。
-// 两级来源:① 同进程 ContextWithTraceID 注入的 ctx key;② 跨进程场景 —
-// server 端收到的 metainfo persistent 值(2026-09-06 e2e 修复:原实现只读
-// ①,服务端永远拿不到对端透传的 trace_id;且 metainfo.GetValue 不读
-// persistent 存储,必须用 GetPersistentValue)。
+// TraceIDFromContext 提取 ctx 里注入的 trace_id。
+// 两级来源:① 同进程 traceid.ContextWith(或本包 ContextWithTraceID,二者
+// 同键)注入的 ctx key(2026-11-13 #198 修复:原实现读自持私有键,与
+// traceid.ContextWith 的键类型不同,业务按包文档经 traceid.ContextWith
+// 注入的值永远取不到——链路静默断链);② 跨进程场景 — server 端收到的
+// metainfo persistent 值(2026-09-06 e2e 修复:原实现只读①,服务端永远
+// 拿不到对端透传的 trace_id;且 metainfo.GetValue 不读 persistent 存储,
+// 必须用 GetPersistentValue)。
 func TraceIDFromContext(ctx context.Context) string {
-	if v, ok := ctx.Value(traceIDKey{}).(string); ok && v != "" {
+	if v := traceid.FromContext(ctx); v != "" {
 		return v
 	}
 	if v, ok := metainfo.GetPersistentValue(ctx, traceIDMetaKey); ok && v != "" {
@@ -61,14 +65,14 @@ func TraceIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-// FromContextExtractor 默认 extractor:从 ctx 读 ekit traceid(由
-// ContextWithTraceID 注入),key 用 "x-trace-id"。
+// FromContextExtractor 默认 extractor:提取 ctx 里的 trace_id(经
+// TraceIDFromContext:traceid ctx 键 + metainfo persistent 两级来源),
+// key 用 "x-trace-id"。
 func FromContextExtractor(ctx context.Context) (string, string, bool) {
-	v, ok := ctx.Value(traceIDKey{}).(string)
-	if !ok || v == "" {
-		return "", "", false
+	if v := TraceIDFromContext(ctx); v != "" {
+		return traceIDMetaKey, v, true
 	}
-	return traceIDMetaKey, v, true
+	return "", "", false
 }
 
 // PropagateMiddlewareBuilder 构造 client.MiddlewareBuilder,每次 RPC
