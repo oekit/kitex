@@ -207,8 +207,6 @@ type httpRealGenReq struct {
 	UID     int64  `protobuf:"bytes,3,opt,name=uid,proto3" form:"uid" json:"uid,omitempty"`
 }
 
-//nolint:unused // 直值使用（无指针解引用差异），仅供 ShapeOf 提取
-
 type rpcRealGenReq struct {
 	Name    *string `thrift:"name,1,required" frugal:"1,required,string" json:"name"`
 	Version *string `thrift:"version,2,optional" frugal:"2,optional,string" json:"version"`
