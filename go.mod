@@ -14,11 +14,11 @@ require (
 	github.com/oekit/concurrency v0.34.1
 	github.com/oekit/core v0.15.1
 	github.com/oekit/logx v0.10.0
-	github.com/oekit/metrics v0.3.0
+	github.com/oekit/metrics v0.3.1
 	github.com/oekit/nns v0.8.0
-	github.com/oekit/registry v0.5.15
+	github.com/oekit/registry v0.5.16
 	github.com/oekit/registry/nacos v0.1.14
-	github.com/oekit/tracing v0.4.2
+	github.com/oekit/tracing v0.4.3
 	github.com/prometheus/client_golang v1.25.0
 )
 
