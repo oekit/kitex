@@ -7,6 +7,7 @@ import (
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
 	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/oekit/tracing/traceid"
 )
 
 // fakeEndpoint 是 middleware 链的下一跳,记录传过来的 ctx 用于断言 metainfo 注入。
@@ -177,4 +178,45 @@ func TestMetaKeyExtractor_TypeAlias(t *testing.T) {
 	var _ MetaKeyExtractor = func(_ context.Context) (string, string, bool) { return "", "", false }
 	// 编译期检查通过
 	_ = endpoint.Endpoint(nil)
+}
+
+// TestTraceidContextWith_Propagated 回归（#198）：业务按包文档在 gin/hertz
+// 入口调 traceid.ContextWith 注入——默认 extractor 必须取到并注入出向
+// metainfo x-trace-id。此前 kitexmeta 自持私有 ctx 键与 traceid 键类型不同，
+// 该路径静默断链（零报错零日志）。
+func TestTraceidContextWith_Propagated(t *testing.T) {
+	ctx := traceid.ContextWith(context.Background(), "trace-from-traceid")
+
+	if key, val, ok := FromContextExtractor(ctx); !ok || key != "x-trace-id" || val != "trace-from-traceid" {
+		t.Fatalf("FromContextExtractor(traceid ctx) = (%q,%q,%v), want (x-trace-id,trace-from-traceid,true)", key, val, ok)
+	}
+	if v := TraceIDFromContext(ctx); v != "trace-from-traceid" {
+		t.Errorf("TraceIDFromContext = %q, want trace-from-traceid", v)
+	}
+
+	// 出向注入：PropagateMiddlewareBuilder 把该值落 persistent metainfo
+	builder := PropagateMiddlewareBuilder()
+	mw := builder(ctx)
+	fake := &fakeEndpoint{}
+	wrapped := mw(fake.invoke)
+	if err := wrapped(ctx, "req", "resp"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if v, ok := metainfo.GetPersistentValue(fake.gotCtx, "x-trace-id"); !ok || v != "trace-from-traceid" {
+		t.Errorf("outgoing metainfo x-trace-id = (%q,%v), want (trace-from-traceid,true)", v, ok)
+	}
+}
+
+// TestContextWithTraceID_DelegatesToTraceid 钉住同源键：ContextWithTraceID
+// 与 traceid.ContextWith 注入的是同一个键，两者注入的值互相可读（#198：
+// 单一真相源，不允许再分叉出第二把键）。
+func TestContextWithTraceID_DelegatesToTraceid(t *testing.T) {
+	ctx := ContextWithTraceID(context.Background(), "via-kitexmeta")
+	if v := traceid.FromContext(ctx); v != "via-kitexmeta" {
+		t.Errorf("kitexmeta 注入的值 traceid.FromContext 读不到 = %q（键必须同源）", v)
+	}
+	ctx2 := traceid.ContextWith(ctx, "via-traceid")
+	if v := TraceIDFromContext(ctx2); v != "via-traceid" {
+		t.Errorf("traceid 注入的值 TraceIDFromContext 读不到 = %q", v)
+	}
 }

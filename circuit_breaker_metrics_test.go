@@ -3,6 +3,7 @@ package kitex
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
 	"github.com/cloudwego/kitex/pkg/retry"
@@ -192,4 +193,76 @@ func TestCBMetricsMW_RetryCountingViaTransitKey(t *testing.T) {
 		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != 2 {
 		t.Fatalf("non-retry attempt must not count, got %v", got)
 	}
+}
+
+// TestCBStatePoller_GaugeSeededBeforeFirstRequest 回归（#194）：panel 懒加载
+// （首个请求前）或 DumpBreakers 为空时，breaker_state gauge series 仍必须
+// 存在且为 closed——看板呈现 closed 而非 no-data，与 nns-endpoint 的
+// 「series 从创建即存在」口径对齐。
+func TestCBStatePoller_GaugeSeededBeforeFirstRequest(t *testing.T) {
+	reg := prom.NewRegistry()
+	m := resilience.NewMetrics(reg, "test")
+	p := newCBStatePoller("echo-svc", m, nil)
+	p.snapshot = func() map[string]int { return nil } // panel 未建（零流量）
+
+	p.Poll()
+	if got := metricValue(t, reg, "test_breaker_state",
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateClosed {
+		t.Fatalf("breaker_state series must exist (closed) before first request, got %v", got)
+	}
+}
+
+// TestCBStatePoller_GaugeRecoversWhenBreakersDisappear 钉住 nil 快照的迁移
+// 语义：全部 breaker 消失（空表）与「从未有数据」同型——聚合回 closed 并记
+// open→closed transition，不能停在最后一次观测的 open 值上。
+func TestCBStatePoller_GaugeRecoversWhenBreakersDisappear(t *testing.T) {
+	reg := prom.NewRegistry()
+	m := resilience.NewMetrics(reg, "test")
+	p := newCBStatePoller("echo-svc", m, nil)
+
+	p.snapshot = func() map[string]int {
+		return map[string]int{"echo": resilience.StateOpen}
+	}
+	p.Poll()
+	if got := metricValue(t, reg, "test_breaker_state",
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateOpen {
+		t.Fatalf("precondition: aggregated open, got %v", got)
+	}
+
+	// snapshot 变 nil（breaker 全部消失）→ gauge 回 closed + transition 留痕
+	p.snapshot = func() map[string]int { return nil }
+	p.Poll()
+	if got := metricValue(t, reg, "test_breaker_state",
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateClosed {
+		t.Fatalf("breaker_state must return to closed when breakers disappear, got %v", got)
+	}
+	if got := metricValue(t, reg, "test_breaker_transitions_total",
+		map[string]string{"service": "echo-svc", "kind": "kitex", "from": "open", "to": "closed"}); got != 1 {
+		t.Fatalf("expected 1 open→closed transition, got %v", got)
+	}
+}
+
+// TestCBStatePoller_StartSeedsGaugeImmediately 钉住 start() 的 seed 行为：
+// 轮询器启动即 emit Closed（不等首个 tick / 首个请求），series 从启动就存在。
+func TestCBStatePoller_StartSeedsGaugeImmediately(t *testing.T) {
+	reg := prom.NewRegistry()
+	m := resilience.NewMetrics(reg, "test")
+	p := newCBStatePoller("echo-svc", m, nil) // 真实 CBSuite(nil) → snapshot 恒 nil
+
+	p.start(50 * time.Millisecond)
+	defer func() { _ = p.Stop() }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mfs, err := reg.Gather()
+		if err == nil {
+			for _, mf := range mfs {
+				if mf.GetName() == "test_breaker_state" {
+					return // series 存在即通过（首个请求从未发生，值恒为 closed seed）
+				}
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("breaker_state series must exist immediately after poller start (seeded closed)")
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/retry"
+	"github.com/oekit/logx"
 )
 
 // newRetryPolicyApplier 构造 retry 配置的全量同步 applier：配置中被移除的
@@ -26,7 +27,7 @@ func newRetryPolicyApplier(rc *retry.Container) *fullSyncApplier[retry.Policy] {
 			rc.DeletePolicy(method)
 		},
 		onParseError: func(err error) {
-			govLog.Error("parse retry config failed", "err", err)
+			govLog.Error("parse retry config failed", logx.ErrKey, err)
 		},
 	}
 }
@@ -60,7 +61,7 @@ func withRetry(clientService, serverService string, gov *GovernanceConfig) ([]cl
 			govLog.Info("retry config updated", "dataId", dataID, "methods", n)
 		}
 	}); err != nil {
-		govLog.Warn("subscribe retry config failed", "dataId", dataID, "err", err)
+		govLog.Warn("subscribe retry config failed", "dataId", dataID, logx.ErrKey, err)
 	}
 
 	return []client.Option{client.WithRetryContainer(rc)}, rc.Close
