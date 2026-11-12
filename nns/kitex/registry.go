@@ -68,7 +68,7 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 
 	// ServiceClient.Register 使用 Bootstrap.ServiceName 和 GetPodIP，
 	// 但 Kitex 的 info.Addr 可能不同（如 0.0.0.0），这里用 info 的实际地址。
-	if r.client.GetRegistrar() == nil {
+	if r.client.Registrar() == nil {
 		// mock 模式是有意跳过；非 mock 降级（启动时 Nacos 不可达）静默放行
 		// 会让服务"正常启动但永不可被发现"且无当次调用信号——显式报错
 		// 让 Required 注册语义生效（对齐 bootstrap Register 失败即回滚的行为）
@@ -77,7 +77,7 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 		}
 		return fmt.Errorf("nns-kitex registry: registrar unavailable (degraded, not mock mode); service would be undiscoverable")
 	}
-	return r.client.GetRegistrar().Register(context.Background(), inst)
+	return r.client.Registrar().Register(context.Background(), inst)
 }
 
 // Deregister 从 NNS 注册中心注销 Kitex 服务实例。
@@ -93,13 +93,13 @@ func (r *nnsRegistry) Deregister(info *kregistry.Info) error {
 		return fmt.Errorf("nns-kitex registry: %w", err)
 	}
 
-	if r.client.GetRegistrar() == nil {
+	if r.client.Registrar() == nil {
 		if r.client.MockMode() {
 			return nil // mock 模式：静默跳过
 		}
 		return fmt.Errorf("nns-kitex registry: registrar unavailable (degraded, not mock mode)")
 	}
-	return r.client.GetRegistrar().Deregister(context.Background(), inst)
+	return r.client.Registrar().Deregister(context.Background(), inst)
 }
 
 // resolveServiceName 对空服务名兜底（#93）：Kitex 填进 registry.Info.ServiceName
