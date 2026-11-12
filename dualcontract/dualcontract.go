@@ -230,12 +230,14 @@ type config struct {
 	ignoreRequiredness bool
 }
 
-// Option 配置 DiffShapes/AssertSameShape。
-type Option func(*config)
+// DualContractOption 配置 DiffShapes/AssertSameShape（AGENTS 命名红线：
+// 禁止导出裸 Option——消费方 dot-import 本包与 cloudwego/kitex/client 时
+// 与其导出的 Option 类型编译期冲突）。
+type DualContractOption func(*config)
 
 // IgnoreFields 豁免字段（已声明的单侧传输差异，如网关注入的 uid：
 // HTTP 侧由网关注入 header、RPC 侧为显式字段——形状不同是**设计**而非漂移）。
-func IgnoreFields(names ...string) Option {
+func IgnoreFields(names ...string) DualContractOption {
 	return func(c *config) {
 		for _, n := range names {
 			c.ignore[n] = true
@@ -248,7 +250,7 @@ func IgnoreFields(names ...string) Option {
 // 是生成器能力差异——proto3 无 required、hz 生成物 json tag 只有 omitempty
 // ——不比较，避免恒假阳性淹没门禁）；本 option 供两侧都显式标注、但
 // requiredness 差异已被声明为设计取舍的契约整体关闭该维度。
-func IgnoreRequiredness() Option {
+func IgnoreRequiredness() DualContractOption {
 	return func(c *config) {
 		c.ignoreRequiredness = true
 	}
@@ -256,7 +258,7 @@ func IgnoreRequiredness() Option {
 
 // DiffShapes 比较同一业务方法的 HTTP（hz 生成物）与 RPC（kitex 生成物）
 // 请求形状，返回全部差异（无差异返回 nil）。
-func DiffShapes(httpReq, rpcReq any, opts ...Option) []FieldDiff {
+func DiffShapes(httpReq, rpcReq any, opts ...DualContractOption) []FieldDiff {
 	cfg := &config{ignore: map[string]bool{}}
 	for _, o := range opts {
 		o(cfg)
@@ -325,7 +327,7 @@ func indexByName(s Shape) map[string]FieldShape {
 
 // AssertSameShape 是 CI 防漂移门禁：差异非空即 fail（列出全部差异），
 // 同时返回差异供调用方附加处理。
-func AssertSameShape(t testing.TB, httpReq, rpcReq any, opts ...Option) []FieldDiff {
+func AssertSameShape(t testing.TB, httpReq, rpcReq any, opts ...DualContractOption) []FieldDiff {
 	t.Helper()
 	diffs := DiffShapes(httpReq, rpcReq, opts...)
 	for _, d := range diffs {
