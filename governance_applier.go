@@ -1,6 +1,9 @@
 package kitex
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
 // fullSyncApplier 是「JSON 整表 → 容器全量同步」类治理配置的泛型骨架，
 // 收敛 circuit_break / retry / rpc_timeout 三份同构 copy-paste（#185）：
@@ -32,7 +35,14 @@ type fullSyncApplier[T any] struct {
 
 // applyConfig 解析并应用一轮配置，返回配置中的 method 数；解析失败返回 -1，
 // 并保留上一轮已应用的状态。
+//
+// Nacos 删除语义（#197）：空 content（配置在 Nacos 上被删除时 SDK 投递的
+// 形态）不是坏 JSON，而是「整表删除」——按空表走全量同步路径，上一轮全部
+// 方法 remove / 整表替换回默认，而不是保留旧策略。
 func (a *fullSyncApplier[T]) applyConfig(data string) int {
+	if strings.TrimSpace(data) == "" {
+		data = "{}"
+	}
 	configs, err := a.parse(data)
 	if err != nil {
 		if a.onParseError != nil {

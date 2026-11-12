@@ -2,11 +2,13 @@ package kitex
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 
 	"github.com/cloudwego/kitex/pkg/limit"
 	klimiter "github.com/cloudwego/kitex/pkg/limiter"
 	"github.com/cloudwego/kitex/server"
+	"github.com/oekit/logx"
 )
 
 // limitConfig 用于解析 Nacos limit 配置。
@@ -30,10 +32,17 @@ type limiterController struct {
 // kitex 语义：limit <= 0 表示不限流，因此 {0,0} 即「解除限流」，
 // 必须原样下发 UpdateLimit——不能按 Option.Valid() 过滤，
 // 否则配置过限流后就永远无法清零。
+//
+// Nacos 删除语义（#197）：空 content = 配置被删除 = 解除限流——空串归一成
+// "{}" 空表（解析出零值 {0,0} 原样下发），而不是当成坏 JSON 保留旧限流；
+// 与 fullSyncApplier / OnChange choke point 的口径一致。
 func (c *limiterController) apply(data string) bool {
+	if strings.TrimSpace(data) == "" {
+		data = "{}"
+	}
 	var cfg limitConfig
 	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
-		govLog.Error("parse limit config failed", "dataId", c.dataID, "err", err)
+		govLog.Error("parse limit config failed", "dataId", c.dataID, logx.ErrKey, err)
 		return false
 	}
 	limitOpt := &limit.Option{
@@ -111,7 +120,7 @@ func withLimiter(serverService string, gov *GovernanceConfig, reporter klimiter.
 	if err := gov.subscribe(dataID, func(data string) {
 		ctrl.apply(data)
 	}); err != nil {
-		govLog.Warn("subscribe limit config failed", "dataId", dataID, "err", err)
+		govLog.Warn("subscribe limit config failed", "dataId", dataID, logx.ErrKey, err)
 	}
 
 	return opts

@@ -187,7 +187,7 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 				// 自己绑定一次确认端口空闲（占用则直接按启动失败处理）。
 				if err := checkProbeAddrFree(app.Context(), cfg.probeAddr); err != nil {
 					srvLog.Error("kitex ready probe target busy, requesting shutdown",
-						"name", name, "addr", cfg.probeAddr, "err", err)
+						"name", name, "addr", cfg.probeAddr, logx.ErrKey, err)
 					app.RequestShutdown()
 					return
 				}
@@ -236,14 +236,14 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 						return
 					}
 					srvLog.Error("kitex ready probe failed, requesting shutdown",
-						"name", name, "err", err)
+						"name", name, logx.ErrKey, err)
 					app.RequestShutdown()
 				})
 			}
 		}
 		if err := svr.Run(); err != nil {
 			srvLog.Error("kitex server stopped with error, requesting shutdown",
-				"name", name, "err", err)
+				"name", name, logx.ErrKey, err)
 			app.RequestShutdown()
 		}
 	})

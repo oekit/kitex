@@ -58,15 +58,46 @@ func WithGovernanceTemplate(dataID string) GovernanceOption {
 
 // WithDataIDTemplate 设置 dataId 模板，支持占位符 {client}、{server}、{category}。
 // 默认 "{client}.{server}.{category}"（客户端）和 "{server}.{category}"（服务端）。
-// 传入的模板同时用于客户端；服务端模板会自动去掉 "{client}." 前缀。
+//
+// 服务端策略没有 client 维度，服务端模板由传入模板**剥离 {client} 占位符**
+// 派生（占位符连同紧随其后的一个分隔符整体删除）——保证任意分隔符形态的
+// 模板派生出的服务端模板都不残留未替换占位符（#199：此前只删字面量
+// "{client}."，"{client}-{server}.{category}" 这类非点号模板渲染出的服务端
+// dataId 残留 "{client}"，Nacos 上永远查不到配置，服务端治理静默失效）。
 func WithDataIDTemplate(tmpl string) GovernanceOption {
 	return func(g *GovernanceConfig) {
 		g.clientTmpl = tmpl
-		// 服务端模板：去掉 {client}. 前缀（如果存在）
-		serverTmpl := tmpl
-		serverTmpl = strings.Replace(serverTmpl, "{client}.", "", 1)
-		g.serverTmpl = serverTmpl
+		g.serverTmpl = stripClientSegment(tmpl)
 	}
+}
+
+// stripClientSegment 从模板中剥离 {client} 占位符：连同紧随其后的一个
+// dataId 分隔符（./-/_/:）一起删；{client} 收尾且带前置分隔符时连分隔符
+// 一起删，避免悬挂分隔符。无分隔符相邻（直连形态）只删占位符本身。
+func stripClientSegment(tmpl string) string {
+	const ph = "{client}"
+	out := tmpl
+	for {
+		i := strings.Index(out, ph)
+		if i < 0 {
+			return out
+		}
+		end := i + len(ph)
+		if end < len(out) && isDataIDSeparator(out[end]) {
+			end++
+		} else if end == len(out) && i > 0 && isDataIDSeparator(out[i-1]) {
+			i--
+		}
+		out = out[:i] + out[end:]
+	}
+}
+
+func isDataIDSeparator(c byte) bool {
+	switch c {
+	case '.', '-', '_', '/', ':':
+		return true
+	}
+	return false
 }
 
 // NewGovernanceConfig 创建治理配置客户端。
@@ -93,7 +124,7 @@ func NewGovernanceConfig(cli config_client.IConfigClient, opts ...GovernanceOpti
 		if err := g.subscribe(dataID, func(data string) {
 			cfg, err := governance.Parse([]byte(data))
 			if err != nil {
-				govLog.Error("parse governance template failed", "dataId", dataID, "err", err)
+				govLog.Error("parse governance template failed", "dataId", dataID, logx.ErrKey, err)
 				return
 			}
 			// 全量同步语义：模板删掉 timeout_ms 段 = 清空上一轮方法级超时
@@ -126,7 +157,7 @@ func NewGovernanceConfig(cli config_client.IConfigClient, opts ...GovernanceOpti
 			g.templateTC.NotifyPolicyChange(raw)
 			govLog.Info("governance template timeout updated", "dataId", dataID, "keys", len(raw))
 		}); err != nil {
-			govLog.Warn("subscribe governance template failed", "dataId", dataID, "err", err)
+			govLog.Warn("subscribe governance template failed", "dataId", dataID, logx.ErrKey, err)
 		}
 	}
 	return g, nil
@@ -191,7 +222,7 @@ func (g *GovernanceConfig) Close() error {
 			DataId: id,
 			Group:  g.group,
 		}); err != nil {
-			govLog.Warn("cancel listen failed", "dataId", id, "err", err)
+			govLog.Warn("cancel listen failed", "dataId", id, logx.ErrKey, err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("cancel listen %s: %w", id, err)
 			}
@@ -233,6 +264,16 @@ func (g *GovernanceConfig) subscribe(dataID string, callback func(string)) error
 			DataId: dataID,
 			Group:  g.group,
 			OnChange: func(_, _, _, data string) {
+				// Nacos 删除语义（#197）：Nacos 上删除配置时 SDK 投递的是空串
+				// 而非空表（config_proxy.go 对 errorCode 300 写空文件后原样
+				// 回调）——空串不是合法 JSON，会被各 handler 当成坏 JSON 保留
+				// 上一轮旧策略，运维删配置等于什么都没恢复。归一成 "{}" 空表
+				// 走正常全量同步路径：retry/熔断被 remove 回默认、rpc_timeout
+				// 整表替换回默认、limit {0,0} 解除限流，与首拉路径（下方
+				// content != "" 跳过）的「空 = 无配置」口径一致。
+				if strings.TrimSpace(data) == "" {
+					data = "{}"
+				}
 				// 锁内拷贝后再遍历：直接持有 map 遍历会与 subscribe 的
 				// 写入并发，触发 concurrent map iteration and write panic
 				g.mu.RLock()
@@ -264,7 +305,7 @@ func (g *GovernanceConfig) subscribe(dataID string, callback func(string)) error
 		Group:  g.group,
 	})
 	if err != nil {
-		govLog.Warn("get initial config failed", "dataId", dataID, "err", err)
+		govLog.Warn("get initial config failed", "dataId", dataID, logx.ErrKey, err)
 	} else if content != "" {
 		callback(content)
 	}

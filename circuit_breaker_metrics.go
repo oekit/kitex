@@ -91,6 +91,12 @@ func newCBStatePoller(service string, m *resilience.Metrics, cbs *circuitbreak.C
 
 // start 启动后台轮询；goroutine 经 async.GoSafe 托管（panic 不打死进程）。
 func (p *cbStatePoller) start(interval time.Duration) {
+	// seed gauge（#194）：CBSuite 的 ServicePanel 懒加载，首个请求前 Poll 的
+	// snapshot 恒为 nil——不 seed 的话 breaker_state{kind="kitex"} series 在
+	// 服务零流量期不存在，看板呈现 no-data 而非 closed，值班无法区分「正常」
+	// 与「采集断了」。启动时显式发一次 Closed，与 nns-endpoint 的
+	// 「gauge series 从熔断器创建即存在」原则对齐。
+	p.metrics.ObserveBreakerState(p.service, kitexMetricsKind, resilience.StateClosed)
 	ticker := time.NewTicker(interval)
 	async.GoSafe(func() {
 		defer ticker.Stop()
@@ -115,7 +121,10 @@ func (p *cbStatePoller) Stop() error {
 func (p *cbStatePoller) Poll() {
 	current := p.snapshot()
 	if current == nil {
-		return
+		// 无方法级快照（panel 懒加载首个请求前为 nil，或 DumpBreakers 为空）：
+		// 服务级聚合状态仍为 Closed，按空表继续走 emit 路径（#194）——
+		// 零流量期 gauge series 必须存在（closed），不能 no-data。
+		current = map[string]int{}
 	}
 
 	worst := resilience.StateClosed

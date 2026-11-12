@@ -122,3 +122,55 @@ func TestGovernanceTemplate_KeyTranslationAndClear(t *testing.T) {
 			cleared, fresh)
 	}
 }
+
+// TestWithDataIDTemplate_ServerTemplateNoPlaceholderResidue 回归（#199）：
+// 服务端模板必须剥离 {client} 占位符本身（连同紧随的分隔符），任意分隔符
+// 形态的模板派生出的服务端 dataId 都不得残留未替换占位符——否则 Nacos 上
+// 不存在该 dataId，服务端治理（limit 类目）静默失效。
+func TestWithDataIDTemplate_ServerTemplateNoPlaceholderResidue(t *testing.T) {
+	stub := &stubConfigClient{
+		getConfigFunc:    func(vo.ConfigParam) (string, error) { return "", nil },
+		listenConfigFunc: func(vo.ConfigParam) error { return nil },
+	}
+
+	cases := []struct {
+		tmpl       string
+		wantClient string // clientDataID("c1","s1","retry") 的期望值
+		wantServer string // serverDataID("s1","limit") 的期望值
+	}{
+		{tmpl: "{client}.{server}.{category}", wantClient: "c1.s1.retry", wantServer: "s1.limit"},
+		{tmpl: "{client}-{server}.{category}", wantClient: "c1-s1.retry", wantServer: "s1.limit"},
+		{tmpl: "{client}_{server}_{category}", wantClient: "c1_s1_retry", wantServer: "s1_limit"},
+		{tmpl: "{client}{server}{category}", wantClient: "c1s1retry", wantServer: "s1limit"},
+		{tmpl: "{server}.{category}", wantClient: "s1.retry", wantServer: "s1.limit"},
+	}
+
+	for _, tc := range cases {
+		g, err := NewGovernanceConfig(stub, WithDataIDTemplate(tc.tmpl))
+		if err != nil {
+			t.Fatalf("NewGovernanceConfig(%q): %v", tc.tmpl, err)
+		}
+		clientID := g.clientDataID("c1", "s1", "retry")
+		if clientID != tc.wantClient {
+			t.Errorf("template %q: client dataId = %q, want %q", tc.tmpl, clientID, tc.wantClient)
+		}
+		serverID := g.serverDataID("s1", "limit")
+		if serverID != tc.wantServer {
+			t.Errorf("template %q: server dataId = %q, want %q", tc.tmpl, serverID, tc.wantServer)
+		}
+		if containsPlaceholder(serverID) {
+			t.Errorf("template %q: server dataId %q carries unsubstituted placeholder", tc.tmpl, serverID)
+		}
+		_ = g.Close()
+	}
+}
+
+// containsPlaceholder 检查渲染结果是否残留 {xxx} 形态的未替换占位符。
+func containsPlaceholder(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '{' {
+			return true
+		}
+	}
+	return false
+}

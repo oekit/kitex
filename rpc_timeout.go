@@ -5,6 +5,7 @@ import (
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/rpctimeout"
+	"github.com/oekit/logx"
 )
 
 // withRPCTimeout 订阅 Nacos rpc_timeout 配置并注入 rpctimeout.Container。
@@ -29,7 +30,7 @@ func withRPCTimeout(clientService, serverService string, gov *GovernanceConfig) 
 			govLog.Info("rpc_timeout config updated", "dataId", dataID, "methods", n)
 		}
 	}); err != nil {
-		govLog.Warn("subscribe rpc_timeout config failed", "dataId", dataID, "err", err)
+		govLog.Warn("subscribe rpc_timeout config failed", "dataId", dataID, logx.ErrKey, err)
 	}
 
 	return []client.Option{client.WithTimeoutProvider(tc)}
@@ -60,7 +61,7 @@ func newRPCTimeoutApplier(tc *rpctimeout.Container, dataID string) *fullSyncAppl
 			tc.NotifyPolicyChange(configs)
 		},
 		onParseError: func(err error) {
-			govLog.Error("parse rpc_timeout config failed", "dataId", dataID, "err", err)
+			govLog.Error("parse rpc_timeout config failed", "dataId", dataID, logx.ErrKey, err)
 		},
 	}
 }

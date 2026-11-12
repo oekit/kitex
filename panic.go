@@ -119,6 +119,6 @@ func logKitexHandlerPanic(ctx context.Context, err error) {
 		"method", method,
 		"remote_addr", remote,
 		"panic", panicVal,
-		"err", err,
+		logx.ErrKey, err,
 		"stack", stack)
 }

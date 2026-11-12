@@ -62,8 +62,21 @@ type FieldShape struct {
 	// Type 是归一化类型（int64/string/[]int64/map[string]int64/自定义名；
 	// 指针解引用后比较）。
 	Type string
-	// Required 表示 thrift requiredness 是否 required。
+	// Required 表示 requiredness 是否 required（thrift tag "required"，或
+	// json tag 手写 ",required" 注解）。
 	Required bool
+	// RequiredKnown 表示来源生成物是否为该字段**显式标注**了 requiredness。
+	//
+	// thrift tag（kitex/thriftgo 生成物）恒为 required/optional 二选一 ⇒
+	// 恒 true；json tag 只有手写 ",required" 注解才表达 requiredness——
+	// 真实 hz/protoc-gen-go 生成物的 json tag 只有 name/omitempty（#203：
+	// proto3 无 required 关键字，thriftgo 也不往 json tag 写 requiredness），
+	// 此时 false（Required=false 只代表「未表达」，不代表「可选」）。
+	//
+	// requiredness 比较只对**两侧都显式标注**的字段生效：单侧未表达是
+	// 生成器能力差异（proto3 vs thrift），不是双 IDL 漂移，比较只会产生
+	// 恒假阳性。
+	RequiredKnown bool
 }
 
 // Shape 是 struct 的传输面形状（字段按声明序）。
@@ -88,47 +101,55 @@ func ShapeOf(v any) Shape {
 		if !f.IsExported() {
 			continue
 		}
-		name, required := tagNameAndRequired(f)
+		name, required, known := tagNameAndRequired(f)
 		fields = append(fields, FieldShape{
-			Name:     name,
-			Type:     normalizeType(f.Type),
-			Required: required,
+			Name:          name,
+			Type:          normalizeType(f.Type),
+			Required:      required,
+			RequiredKnown: known,
 		})
 	}
 	return Shape{Fields: fields}
 }
 
-// tagNameAndRequired 取字段传输名与 requiredness：
-// thrift tag（"name,id,required"）优先，其次 json tag（"name,required"，
-// hz 生成物以 `, required` 标注），最后 Go 字段名。
-func tagNameAndRequired(f reflect.StructField) (string, bool) {
+// tagNameAndRequired 取字段传输名与 requiredness 及其表达性：
+// thrift tag（"name,id,required|optional"，kitex/thriftgo 生成物恒二选一）
+// 优先；其次 json tag——**真实 hz/protoc-gen-go 生成物的 json tag 只有
+// name/omitempty，不标注 requiredness**（#203：proto3 无 required 关键字），
+// 只有手写 ",required" 注解才表达；最后 Go 字段名（无 requiredness 表达）。
+// 返回的 known 表示本字段是否显式表达了 requiredness。
+func tagNameAndRequired(f reflect.StructField) (name string, required, known bool) {
 	if tv, ok := f.Tag.Lookup("thrift"); ok {
 		parts := strings.Split(tv, ",")
-		name := strings.TrimSpace(parts[0])
-		required := false
+		name = strings.TrimSpace(parts[0])
 		for _, p := range parts[1:] {
-			if strings.TrimSpace(p) == "required" {
-				required = true
+			switch strings.TrimSpace(p) {
+			case "required":
+				required, known = true, true
+			case "optional":
+				known = true
 			}
 		}
 		if name != "" {
-			return name, required
+			return name, required, known
 		}
 	}
 	if jv, ok := f.Tag.Lookup("json"); ok {
 		parts := strings.Split(jv, ",")
-		name := strings.TrimSpace(parts[0])
-		required := false
+		name = strings.TrimSpace(parts[0])
 		for _, p := range parts[1:] {
 			if strings.TrimSpace(p) == "required" {
-				required = true
+				// 手写 ",required" 注解（契约测试自标注形态）是 json tag
+				// 唯一的 requiredness 表达面；omitempty 是序列化行为，
+				// 与 requiredness 无关，不作为表达信号。
+				required, known = true, true
 			}
 		}
 		if name != "" {
-			return name, required
+			return name, required, known
 		}
 	}
-	return f.Name, false
+	return f.Name, false, false
 }
 
 // normalizeType 归一化类型字符串（指针解引用；内建类型用 thrift 语义名，
@@ -205,7 +226,8 @@ func (d FieldDiff) String() string {
 
 // config 是 diff 选项。
 type config struct {
-	ignore map[string]bool
+	ignore             map[string]bool
+	ignoreRequiredness bool
 }
 
 // Option 配置 DiffShapes/AssertSameShape。
@@ -218,6 +240,17 @@ func IgnoreFields(names ...string) Option {
 		for _, n := range names {
 			c.ignore[n] = true
 		}
+	}
+}
+
+// IgnoreRequiredness 跳过 requiredness 比较这一维度（与 IgnoreFields 同族）。
+// 默认已经只对「两侧都显式标注 requiredness」的字段比较（#203：单侧未表达
+// 是生成器能力差异——proto3 无 required、hz 生成物 json tag 只有 omitempty
+// ——不比较，避免恒假阳性淹没门禁）；本 option 供两侧都显式标注、但
+// requiredness 差异已被声明为设计取舍的契约整体关闭该维度。
+func IgnoreRequiredness() Option {
+	return func(c *config) {
+		c.ignoreRequiredness = true
 	}
 }
 
@@ -248,7 +281,12 @@ func DiffShapes(httpReq, rpcReq any, opts ...Option) []FieldDiff {
 			diffs = append(diffs, FieldDiff{Field: name, Kind: DiffTypeMismatch,
 				HTTPType: hf.Type, RPCType: rf.Type})
 		}
-		if hf.Required != rf.Required {
+		// requiredness 只在两侧都显式表达时比较（#203）：thrift tag 恒表达
+		// required/optional，真实 hz/protoc-gen-go 生成物的 json tag 不表达
+		// ——「RPC required / HTTP 未表达」是生成器能力差异而非漂移，比较
+		// 会对每个 required 字段恒报假阳性，把 CI 门禁淹没成一片红。
+		if !cfg.ignoreRequiredness && hf.RequiredKnown && rf.RequiredKnown &&
+			hf.Required != rf.Required {
 			diffs = append(diffs, FieldDiff{Field: name, Kind: DiffRequirednessMismatch,
 				HTTPType: hf.Type, RPCType: rf.Type,
 				HTTPRequired: hf.Required, RPCRequired: rf.Required})

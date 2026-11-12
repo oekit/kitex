@@ -6,6 +6,7 @@ import (
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/circuitbreak"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/oekit/logx"
 	"github.com/oekit/metrics/resilience"
 )
 
@@ -48,7 +49,7 @@ func newCBConfigApplier(cbs *circuitbreak.CBSuite) *fullSyncApplier[*circuitbrea
 			cbs.UpdateServiceCBConfig(method, circuitbreak.GetDefaultCBConfig())
 		},
 		onParseError: func(err error) {
-			govLog.Error("parse circuit_break config failed", "err", err)
+			govLog.Error("parse circuit_break config failed", logx.ErrKey, err)
 		},
 	}
 }
@@ -74,7 +75,7 @@ func withCircuitBreaker(clientService, serverService string, gov *GovernanceConf
 			govLog.Info("circuit_break config updated", "dataId", dataID, "methods", n)
 		}
 	}); err != nil {
-		govLog.Warn("subscribe circuit_break config failed", "dataId", dataID, "err", err)
+		govLog.Warn("subscribe circuit_break config failed", "dataId", dataID, logx.ErrKey, err)
 	}
 
 	opts := make([]client.Option, 0, 1+1)
