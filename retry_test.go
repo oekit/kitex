@@ -86,3 +86,27 @@ func TestRetryApplier_BadJSONKeepsPrevState(t *testing.T) {
 		t.Errorf("expected m1 policy preserved after bad JSON, got %v", keys)
 	}
 }
+
+// TestRetryApplier_NullValueTreatedAsRemoval 回归（#210）：{"echo":null} 必须
+// 按"删除该方法"处理，不得把零值 Policy（Enable=false）当成真策略下发——
+// 否则 echo 条目遮蔽 "*" 通配策略，该方法重试持续失效。
+func TestRetryApplier_NullValueTreatedAsRemoval(t *testing.T) {
+	rc := retry.NewRetryContainer()
+	a := newRetryPolicyApplier(rc)
+
+	a.applyConfig(`{"*":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":1}}},"echo":null}`)
+
+	keys := dumpRetryKeys(t, rc)
+	if keys["echo"] {
+		t.Error("null value must not register a (zero) policy for echo")
+	}
+	if !keys["*"] {
+		t.Error("wildcard policy must still be registered")
+	}
+
+	// null 之后补一轮正常配置 → echo 可被正常建策略（删除语义不粘滞）
+	a.applyConfig(`{"echo":{"enable":true,"type":0,"failure_policy":{"stop_policy":{"max_retry_times":1}}}}`)
+	if !dumpRetryKeys(t, rc)["echo"] {
+		t.Error("echo must be registrable after null removal")
+	}
+}

@@ -146,33 +146,13 @@ func TestGovernanceDelete_LimiterCleared(t *testing.T) {
 }
 
 // TestGovernanceDelete_TemplateClearsTimeout 删除模板配置（空串）⇒
-// NotifyPolicyChange 空表重置，方法级超时回退 kitex 默认。
+// provider 无任何命中返回 nil（kitex 回退默认超时），方法级超时不残留。
 func TestGovernanceDelete_TemplateClearsTimeout(t *testing.T) {
-	var onChange func(string, string, string, string)
-	stub := &stubConfigClient{
-		getConfigFunc:    func(vo.ConfigParam) (string, error) { return "", nil },
-		listenConfigFunc: func(p vo.ConfigParam) error { onChange = p.OnChange; return nil },
-	}
+	g, onChange := newTemplateGov(t)
 
-	g, err := NewGovernanceConfig(stub, WithGovernanceTemplate("svc.governance"))
-	if err != nil {
-		t.Fatalf("NewGovernanceConfig: %v", err)
-	}
-	defer func() { _ = g.Close() }()
-
-	onChange("svc.governance", "DEFAULT_GROUP", "", `{"timeout_ms":{"Method":200}}`)
+	onChange("svc.governance", "DEFAULT_GROUP", "", `{"timeout_ms":{"svcA:Method":200}}`)
+	assertTimeout(t, g.templateTP, "svcA", "Method", 200)
 
 	onChange("svc.governance", "DEFAULT_GROUP", "", "")
-	ri := rpcinfo.NewRPCInfo(
-		rpcinfo.EmptyEndpointInfo(),
-		rpcinfo.EmptyEndpointInfo(),
-		rpcinfo.NewInvocation("", "Method"),
-		rpcinfo.NewRPCConfig(),
-		rpcinfo.NewRPCStats(),
-	)
-	got := g.templateTC.Timeouts(ri)
-	fresh := rpctimeout.NewContainer().Timeouts(ri)
-	if got == nil || fresh == nil || got.RPCTimeout() != fresh.RPCTimeout() {
-		t.Errorf("deleted template must reset timeout to kitex default, got %v want %v", got, fresh)
-	}
+	assertTimeout(t, g.templateTP, "svcA", "Method", -1)
 }

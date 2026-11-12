@@ -2,11 +2,14 @@ package kitex
 
 import (
 	"fmt"
-	"github.com/cloudwego/kitex/client"
-	"github.com/cloudwego/kitex/pkg/rpctimeout"
-	"github.com/oekit/core/governance"
 	"strings"
 	"sync"
+	"sync/atomic"
+
+	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/cloudwego/kitex/pkg/rpctimeout"
+	"github.com/oekit/core/governance"
 
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
@@ -26,7 +29,7 @@ var govLog = logx.Delegating("kitex-gov")
 // category 可选值: retry, rpc_timeout, circuit_break, limit, degradation
 type GovernanceConfig struct {
 	templateDataID string
-	templateTC     *rpctimeout.Container
+	templateTP     *governanceTimeoutProvider
 	cli            config_client.IConfigClient
 	group          string
 	clientTmpl     string // 客户端 dataId 模板，支持 {client}、{server}、{category}
@@ -49,9 +52,10 @@ func WithGovernanceGroup(group string) GovernanceOption {
 }
 
 // WithGovernanceTemplate 订阅**统一治理模板**(governance 包 schema,
-// audit 5.2 阶段 2):单 dataID 承载全部类别,template 中 timeout_ms 应用到
-// rpctimeout 容器(经 TemplateTimeoutOptions 取 client.Option);retry/
-// circuit_breaker/limiter 为 kitex 原生富结构,仍走 per-category dataID。
+// audit 5.2 阶段 2):单 dataID 承载全部类别,template 中 timeout_ms 经
+// service 感知的四档查找应用到 RPC 超时(经 TemplateTimeoutOptions 取
+// client.Option,#213);retry/circuit_breaker/limiter 为 kitex 原生富结构,
+// 仍走 per-category dataID。
 func WithGovernanceTemplate(dataID string) GovernanceOption {
 	return func(g *GovernanceConfig) { g.templateDataID = dataID }
 }
@@ -119,7 +123,7 @@ func NewGovernanceConfig(cli config_client.IConfigClient, opts ...GovernanceOpti
 		opt(g)
 	}
 	if g.templateDataID != "" {
-		g.templateTC = rpctimeout.NewContainer()
+		g.templateTP = &governanceTimeoutProvider{}
 		dataID := g.templateDataID
 		if err := g.subscribe(dataID, func(data string) {
 			cfg, err := governance.Parse([]byte(data))
@@ -127,35 +131,11 @@ func NewGovernanceConfig(cli config_client.IConfigClient, opts ...GovernanceOpti
 				govLog.Error("parse governance template failed", "dataId", dataID, logx.ErrKey, err)
 				return
 			}
-			// 全量同步语义：模板删掉 timeout_ms 段 = 清空上一轮方法级超时
-			// （kitex NotifyPolicyChange 空表会重置为默认值），此前 len==0
-			// 直接 return 导致旧超时永久残留
-			raw := make(map[string]*rpctimeout.RPCTimeout, len(cfg.TimeoutMs))
-			for key, ms := range cfg.TimeoutMs {
-				// key 翻译：governance schema 的 "svc:Method"/"svc"/"" 对应
-				// kitex 容器的裸方法名/"*" 通配（容器按 client 独享，
-				// 服务级默认即该 client 的全局默认）。原样透传任何 key 都
-				// 匹配不上，超时静默不生效。
-				method := key
-				if i := strings.LastIndex(key, ":"); i >= 0 {
-					method = key[i+1:]
-				} else if key != "" {
-					// 服务级 key："svc"（无冒号后缀）等价该 client 的全局默认，
-					// 翻译为 "*" 通配；原样透传永远匹配不到方法名
-					method = "*"
-				}
-				if method == "" {
-					method = "*"
-				}
-				// 模板只有总超时:连接超时取固定 100ms,其余给 RPC
-				conn := int64(100)
-				if ms < int(conn) {
-					conn = int64(ms) / 2
-				}
-				raw[method] = &rpctimeout.RPCTimeout{ConnTimeoutMS: int(conn), RPCTimeoutMS: ms}
-			}
-			g.templateTC.NotifyPolicyChange(raw)
-			govLog.Info("governance template timeout updated", "dataId", dataID, "keys", len(raw))
+			// 全量同步语义：模板删掉 timeout_ms 段 = 清空上一轮超时
+			// （provider 对无命中的 lookup 返回 nil，kitex 回退默认超时），
+			// 此前 len==0 直接 return 导致旧超时永久残留
+			g.templateTP.store(cfg)
+			govLog.Info("governance template timeout updated", "dataId", dataID, "keys", len(cfg.TimeoutMs))
 		}); err != nil {
 			govLog.Warn("subscribe governance template failed", "dataId", dataID, logx.ErrKey, err)
 		}
@@ -165,11 +145,55 @@ func NewGovernanceConfig(cli config_client.IConfigClient, opts ...GovernanceOpti
 
 // TemplateTimeoutOptions 返回统一模板 timeout_ms 的 client.Option;
 // 未启用 WithGovernanceTemplate 时返回 nil。
+//
+// 返回的 TimeoutProvider 每次 RPC 按 governance schema 的四档有序查找
+// （精确 "svc:Method" → 服务级 "svc" → service 点段前缀最长 → 全局 ""）
+// 取超时——service 维度在查找面内被正确消费（#213：旧的 key 翻译把
+// service 维度整个丢掉，多个 service 级 key 塌进同一个 "*" 槽位，生效
+// 超时随 map 遍历序随机漂移且跨服务串味）；无命中返回 nil，kitex 回退
+// 默认超时。
 func (g *GovernanceConfig) TemplateTimeoutOptions() []client.Option {
-	if g.templateTC == nil {
+	if g.templateTP == nil {
 		return nil
 	}
-	return []client.Option{client.WithTimeoutProvider(g.templateTC)}
+	return []client.Option{client.WithTimeoutProvider(g.templateTP)}
+}
+
+// governanceTimeoutProvider 实现 rpcinfo.TimeoutProvider：持有最新一轮
+// 统一治理模板（热更整表原子换新），每次 RPC 按 schema 四档查找取超时。
+// kitex 客户端对 Timeouts 返回 nil 的处理是回退默认超时（client.go:
+// `if c := p.Timeouts(ri); c != nil`），无命中即默认，无需本地兜底。
+type governanceTimeoutProvider struct {
+	cfg atomic.Pointer[governance.Config]
+}
+
+func (p *governanceTimeoutProvider) store(cfg *governance.Config) { p.cfg.Store(cfg) }
+
+// Timeouts 按 (目的服务, 方法) 做四档查找。模板只有总超时:连接超时取
+// 固定 100ms,其余给 RPC（与旧翻译路径同口径）。
+func (p *governanceTimeoutProvider) Timeouts(ri rpcinfo.RPCInfo) rpcinfo.Timeouts {
+	cfg := p.cfg.Load()
+	if cfg == nil {
+		return nil
+	}
+	svc, method := "", ""
+	if ri != nil {
+		if to := ri.To(); to != nil {
+			svc = to.ServiceName()
+		}
+		if inv := ri.Invocation(); inv != nil {
+			method = inv.MethodName()
+		}
+	}
+	ms, ok := cfg.LookupTimeout(svc, method)
+	if !ok {
+		return nil
+	}
+	conn := int64(100)
+	if ms < int(conn) {
+		conn = int64(ms) / 2
+	}
+	return &rpctimeout.RPCTimeout{ConnTimeoutMS: int(conn), RPCTimeoutMS: ms}
 }
 
 // clientDataID 渲染客户端策略的 dataId。
