@@ -85,7 +85,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6 // indirect
 	github.com/oekit/concurrency v0.34.1 // indirect
-	github.com/oekit/core v0.14.2 // indirect
+	github.com/oekit/core v0.15.0 // indirect
 	github.com/oekit/logx v0.10.0 // indirect
 	github.com/oekit/logx/kitexlog v0.1.12 // indirect
 	github.com/oekit/metrics v0.3.0 // indirect

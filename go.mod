@@ -10,9 +10,9 @@ require (
 	github.com/kitex-contrib/monitor-prometheus v0.2.0
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6
-	github.com/oekit/bootstrap v0.7.7
+	github.com/oekit/bootstrap v0.7.8
 	github.com/oekit/concurrency v0.34.1
-	github.com/oekit/core v0.14.2
+	github.com/oekit/core v0.15.0
 	github.com/oekit/logx v0.10.0
 	github.com/oekit/metrics v0.3.0
 	github.com/oekit/nns v0.8.0
