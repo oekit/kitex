@@ -15,7 +15,7 @@ require (
 	github.com/oekit/core v0.14.2
 	github.com/oekit/logx v0.10.0
 	github.com/oekit/metrics v0.3.0
-	github.com/oekit/nns v0.7.0
+	github.com/oekit/nns v0.8.0
 	github.com/oekit/registry v0.5.15
 	github.com/oekit/registry/nacos v0.1.14
 	github.com/prometheus/client_golang v1.25.0
