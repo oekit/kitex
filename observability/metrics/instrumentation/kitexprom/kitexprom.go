@@ -34,44 +34,68 @@ import (
 // tracerCache 按 (Registry, 侧) 缓存 tracer。插件内部用 MustRegister 注册
 // collector（同名不去重），同 Registry 重复创建会 panic；tracer 是无状态
 // 的 stats.Tracer（指标经 labels 区分 caller/callee/method），共享零风险。
-var tracerCache sync.Map // struct{side bool, reg prom.Registerer} → stats.Tracer
+//
+// 缓存值是 *tracerEntry（构造收口在 sync.Once 内，#211）：Load/LoadOrStore
+// 组合不构成互斥——两 goroutine 可同时未命中、各自构造，插件内部的
+// MustRegister 遇同名重复注册直接 panic 打死进程（check-then-act）。构造
+// 必须收敛到共享 entry 的 once 内，读侧也经 entry.get() 等 once 完成，
+// 不存在读到半构造态的窗口。
+var tracerCache sync.Map // tracerKey → *tracerEntry
 
 type tracerKey struct {
 	serverSide bool
 	reg        prom.Registerer
 }
 
+type tracerEntry struct {
+	once sync.Once
+	new  func() stats.Tracer
+	tr   stats.Tracer
+}
+
+// get 幂等构造：首个调用执行 new，其余（含并发）等首次完成并拿到同一实例
+// （sync.Once 保证 f 完成先行于任何后续 Do 返回）。
+func (e *tracerEntry) get() stats.Tracer {
+	e.once.Do(func() { e.tr = e.new() })
+	return e.tr
+}
+
+// loadOrNewTracer 按 key 取共享 tracer；未命中时以 newFn 构造一次（并发
+// 安全：构造收敛进共享 entry 的 once，输掉 LoadOrStore 竞争的一方不会
+// 执行自己的构造）。
+func loadOrNewTracer(key tracerKey, newFn func() stats.Tracer) stats.Tracer {
+	if v, ok := tracerCache.Load(key); ok {
+		return v.(*tracerEntry).get()
+	}
+	e := &tracerEntry{new: newFn}
+	actual, _ := tracerCache.LoadOrStore(key, e)
+	return actual.(*tracerEntry).get()
+}
+
 // NewClientTracer 创建 client 侧方法级 RPC 指标 tracer。
 // reg 为 nil 时回退 ekit 默认 metrics.Registry；同 Registry 幂等（多 client
-// 共享一个 tracer 实例）。opts 仅在首次创建时生效。
+// 共享一个 tracer 实例，并发创建也只构造一次，#211）。opts 仅在首次创建时
+// 生效。
 func NewClientTracer(reg prom.Registerer, opts ...kprom.Option) stats.Tracer {
-	key := tracerKey{reg: asRegistry(reg)}
-	if v, ok := tracerCache.Load(key); ok {
-		return v.(stats.Tracer)
-	}
-	tr := kprom.NewClientTracer("", "",
-		append([]kprom.Option{
-			kprom.WithRegistry(asRegistry(reg)),
-			kprom.WithDisableServer(true),
-		}, opts...)...)
-	actual, _ := tracerCache.LoadOrStore(key, tr)
-	return actual.(stats.Tracer)
+	return loadOrNewTracer(tracerKey{reg: asRegistry(reg)}, func() stats.Tracer {
+		return kprom.NewClientTracer("", "",
+			append([]kprom.Option{
+				kprom.WithRegistry(asRegistry(reg)),
+				kprom.WithDisableServer(true),
+			}, opts...)...)
+	})
 }
 
 // NewServerTracer 创建 server 侧方法级 RPC 指标 tracer
 // （同 NewClientTracer 语义，client/server 指标名互不冲突）。
 func NewServerTracer(reg prom.Registerer, opts ...kprom.Option) stats.Tracer {
-	key := tracerKey{serverSide: true, reg: asRegistry(reg)}
-	if v, ok := tracerCache.Load(key); ok {
-		return v.(stats.Tracer)
-	}
-	tr := kprom.NewServerTracer("", "",
-		append([]kprom.Option{
-			kprom.WithRegistry(asRegistry(reg)),
-			kprom.WithDisableServer(true),
-		}, opts...)...)
-	actual, _ := tracerCache.LoadOrStore(key, tr)
-	return actual.(stats.Tracer)
+	return loadOrNewTracer(tracerKey{serverSide: true, reg: asRegistry(reg)}, func() stats.Tracer {
+		return kprom.NewServerTracer("", "",
+			append([]kprom.Option{
+				kprom.WithRegistry(asRegistry(reg)),
+				kprom.WithDisableServer(true),
+			}, opts...)...)
+	})
 }
 
 // ClientOption 返回挂载 client tracer 的 kitex client.Option：
