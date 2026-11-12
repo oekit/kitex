@@ -1,10 +1,14 @@
 package kitexprom
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/cloudwego/kitex/pkg/stats"
 	"github.com/oekit/metrics"
 
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -98,3 +102,67 @@ func TestRegistryReuse(t *testing.T) {
 		t.Fatal("client and server tracers must be distinct")
 	}
 }
+
+// TestLoadOrNewTracer_ConcurrentSingleConstruction 回归（#211）：Load/
+// LoadOrStore 组合不构成互斥，构造必须收敛进共享 entry 的 sync.Once——
+// 并发创建同 key tracer 只构造一次，且所有观察者拿到同一实例。
+func TestLoadOrNewTracer_ConcurrentSingleConstruction(t *testing.T) {
+	var calls atomic.Int32
+	key := tracerKey{reg: prom.NewRegistry()}
+	const n = 16
+	results := make([]stats.Tracer, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i] = loadOrNewTracer(key, func() stats.Tracer {
+				calls.Add(1)
+				return fakeTracer{}
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("constructor ran %d times, want exactly 1 (check-then-act regression)", got)
+	}
+	for i := 1; i < n; i++ {
+		if results[i] != results[0] {
+			t.Fatal("observers must share the single constructed tracer")
+		}
+	}
+}
+
+// TestNewClientTracer_ConcurrentNoPanic 回归（#211）真实路径：并发对同一
+// Registry 调 NewClientTracer——插件内部 MustRegister 遇同名重复注册会
+// panic 打死进程；构造串行化后必须零 panic、单实例。
+func TestNewClientTracer_ConcurrentNoPanic(t *testing.T) {
+	reg := prom.NewRegistry()
+	const n = 8
+	results := make([]stats.Tracer, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i] = NewClientTracer(reg)
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < n; i++ {
+		if results[i] == nil {
+			t.Fatal("tracer must never be nil (no half-constructed reads)")
+		}
+		if i > 0 && results[i] != results[0] {
+			t.Fatal("all concurrent callers must share one tracer instance")
+		}
+	}
+}
+
+// fakeTracer 是最小 stats.Tracer 实现（计数用，不产生指标）。
+type fakeTracer struct{}
+
+func (fakeTracer) Start(ctx context.Context) context.Context { return ctx }
+func (fakeTracer) Finish(context.Context)                    {}

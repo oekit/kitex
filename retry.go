@@ -11,17 +11,30 @@ import (
 // newRetryPolicyApplier 构造 retry 配置的全量同步 applier：配置中被移除的
 // method 调 DeletePolicy 删除（回退为不重试），与 rpc_timeout 的整表替换
 // 保持一致的全量同步语义；diff/prev/mutex 骨架收编在 fullSyncApplier（#185）。
-func newRetryPolicyApplier(rc *retry.Container) *fullSyncApplier[retry.Policy] {
-	return &fullSyncApplier[retry.Policy]{
-		parse: func(data string) (map[string]retry.Policy, error) {
-			var policies map[string]retry.Policy
+//
+// null 值过滤（#210）：与兄弟实现（rpc_timeout/circuit_break）同款——用指针
+// 元素类型解析以区分 null 与零值对象。值类型下 {"echo":null} 被解成零值
+// Policy（Enable=false）并被当成真策略下发：零值策略不重试，遮蔽 "*" 通配
+// 策略使该方法重试持续失效，且 JSON 语法上根本无法区分「显式禁用」与「null
+// 删除」。null 按"删除该方法"处理（回落 "*" 通配或容器默认）。
+func newRetryPolicyApplier(rc *retry.Container) *fullSyncApplier[*retry.Policy] {
+	return &fullSyncApplier[*retry.Policy]{
+		parse: func(data string) (map[string]*retry.Policy, error) {
+			var policies map[string]*retry.Policy
 			if err := json.Unmarshal([]byte(data), &policies); err != nil {
 				return nil, err
 			}
 			return policies, nil
 		},
-		apply: func(method string, p retry.Policy) {
-			rc.NotifyPolicyChange(method, p)
+		normalize: func(method string, p *retry.Policy) bool {
+			if p == nil {
+				govLog.Warn("retry config null value treated as removal", "method", method)
+				return false
+			}
+			return true
+		},
+		apply: func(method string, p *retry.Policy) {
+			rc.NotifyPolicyChange(method, *p)
 		},
 		remove: func(method string) {
 			rc.DeletePolicy(method)
