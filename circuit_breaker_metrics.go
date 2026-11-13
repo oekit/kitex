@@ -161,7 +161,7 @@ func (p *cbStatePoller) Poll() {
 //     （DetailedError.Is 匹配 basic 指针）
 func cbMetricsMW(service string, m *resilience.Metrics) endpoint.Middleware {
 	return func(next endpoint.Endpoint) endpoint.Endpoint {
-		return func(ctx context.Context, req, resp interface{}) error {
+		return func(ctx context.Context, req, resp any) error {
 			if _, ok := metainfo.GetPersistentValue(ctx, retry.TransitKey); ok {
 				m.ObserveRetry(service, kitexMetricsKind)
 			}

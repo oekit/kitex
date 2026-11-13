@@ -73,7 +73,7 @@ func NewTracingClientOptions() []client.Option {
 // 注入到 outgoing metainfo。失败不影响 RPC,只 log warn。
 func otelClientMWBuilder(_ context.Context) endpoint.Middleware {
 	return func(next endpoint.Endpoint) endpoint.Endpoint {
-		return func(ctx context.Context, req, resp interface{}) error {
+		return func(ctx context.Context, req, resp any) error {
 			spanCtx := trace.SpanContextFromContext(ctx)
 			if spanCtx.IsValid() {
 				carrier := metainfoCarrier{values: make(map[string]string)}
