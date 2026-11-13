@@ -2,6 +2,10 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.8.1] — 2026-11-14
+
+- refactor(dualcontract): sort.Slice → slices.SortFunc（cmp 单比较函数，sort.Interface 三件套退役）+ reflect 遍历 for 计数 → range over int（Go 1.22）——排序口径不变，行为等价现代化
+
 ## [v0.8.0] — 2026-11-13
 
 - **BREAKING**：1) 删除 NewLogger（Deprecated 别名）——迁移 github.com/oekit/logx/kitexlog 的 kitexlog.NewLogger（行为一致）。2) 熔断指标面随 metrics v0.4.0 迁类型化入口（CircuitState 枚举/ObserveBreakerStateTyped/ObserveTransitionTyped）。地板抬 metrics v0.4.0 / pkg v0.48.0 / logx v0.11.0 / concurrency v0.36.0 / nns v0.9.0。
