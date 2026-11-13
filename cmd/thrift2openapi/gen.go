@@ -144,7 +144,7 @@ func (g *generator) run() error {
 // 无 api.<verb> 注解的方法（纯 RPC）不进 HTTP 文档。
 func (g *generator) genFunction(svc *parser.Service, fn *parser.Function) error {
 	// api.skip：IDL 内声明路由但明确不进文档（豁免注解，消配置双写）。
-	if v, ok := annoValue(fn.Annotations, "api.skip"); ok && truthy(v) {
+	if annoBool(fn.Annotations, "api.skip") {
 		return nil
 	}
 	for _, verb := range httpVerbs {
@@ -218,7 +218,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 			return nil, err
 		}
 		for _, f := range st.Fields {
-			if v, ok := annoValue(f.Annotations, "api.none"); ok && truthy(v) {
+			if annoBool(f.Annotations, "api.none") {
 				continue
 			}
 			name := f.Name
@@ -356,7 +356,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 	// 鉴权标记：全局 security（-auth）；免 JWT（api.noauth / -auth-exempt）
 	// 显式置空，文档读者可分辨「无要求」与「未标记」。
 	if g.opts.AuthScheme != "" {
-		if noAuth, ok := annoValue(fn.Annotations, "api.noauth"); ok && truthy(noAuth) {
+		if annoBool(fn.Annotations, "api.noauth") {
 			op.Security = &SecurityReqs{}
 		} else if containsPath(g.opts.AuthExemptPaths, tpl) {
 			op.Security = &SecurityReqs{}
@@ -549,6 +549,34 @@ func annoValue(annos parser.Annotations, key string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// annoBool 布尔注解判定（#223）：注解存在即为真，唯一例外是显式写出的
+// 非真值（如 api.skip = "false"）判假——与 annoLookup 的 bare 语义对齐。
+//
+// 此前 api.skip/api.none/api.noauth 走 annoValue + truthy：annoValue 要求
+// len(Values) > 0，bare 形态（注解在、值列表空）直接 ok=false 被静默吞掉，
+// 与同文件 annoLookup「bare 返回 ("", true)」的语义分裂——写
+// `(api.skip)` / `(api.none)` 的 IDL 生成的文档里注解毫无效果，且无任何
+// 报错。thriftgo 文法 `Annotation <- Identifier EQUAL Literal` 要求带值，
+// 但 AST 既可由 ParseFile 之外的路径构造，值列表也可能是空切片（见
+// annoLookup 的 bare 分支），布尔位必须按「存在即真」兜底。
+//
+// 语义表：
+//   - 注解不存在            → false
+//   - 注解存在、值为空/bare  → true   （bare 形态，#223 修复点）
+//   - 值 truthy("true"/"1"/"yes") → true
+//   - 其余显式值（"false"/"0"/"no"/任意）→ false
+func annoBool(annos parser.Annotations, key string) bool {
+	v, ok := annoLookup(annos, key)
+	if !ok {
+		return false
+	}
+	if v == "" {
+		// bare（无值）或显式空串：存在即真，与 annoLookup 的 bare 口径一致。
+		return true
+	}
+	return truthy(v)
 }
 
 // hasAnno 判断注解是否存在（值可为空）。
