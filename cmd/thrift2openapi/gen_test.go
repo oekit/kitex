@@ -315,6 +315,95 @@ func TestOpenAPIPath(t *testing.T) {
 	}
 }
 
+// TestAnnoBool_BareAndValueForms 钉住布尔注解的完整语义面（#223）：
+// annoValue 要求 len(Values) > 0，bare 形态（注解在、值列表空）此前 ok=false
+// 被静默吞掉，与同文件 annoLookup「bare 返回 ("", true)」的语义分裂——
+// api.skip/api.none/api.noauth 写成 bare 或 = "" 时生成的文档毫无效果且
+// 不报错。annoBool 按「存在即真」兜底，非空值仍走 truthy 宽松解析。
+func TestAnnoBool_BareAndValueForms(t *testing.T) {
+	cases := []struct {
+		name string
+		// annos 直接构造：thriftgo 文法 Annotation <- Identifier EQUAL
+		// Literal 要求带值，bare（Values 为空）只能来自 AST 构造/上游
+		// 改动，正是要兜住的形态。
+		annos parser.Annotations
+		key   string
+		want  bool
+	}{
+		{"注解不存在", parser.Annotations{{Key: "api.get", Values: []string{"/x"}}}, "api.skip", false},
+		{"bare 无值", parser.Annotations{{Key: "api.skip"}}, "api.skip", true},
+		{"bare 空值列表", parser.Annotations{{Key: "api.skip", Values: []string{}}}, "api.skip", true},
+		{"显式空串", parser.Annotations{{Key: "api.skip", Values: []string{""}}}, "api.skip", true},
+		{"true", parser.Annotations{{Key: "api.skip", Values: []string{"true"}}}, "api.skip", true},
+		{"1", parser.Annotations{{Key: "api.skip", Values: []string{"1"}}}, "api.skip", true},
+		{"yes", parser.Annotations{{Key: "api.skip", Values: []string{"yes"}}}, "api.skip", true},
+		{"FALSE 显式否定", parser.Annotations{{Key: "api.skip", Values: []string{"false"}}}, "api.skip", false},
+		{"0 显式否定", parser.Annotations{{Key: "api.skip", Values: []string{"0"}}}, "api.skip", false},
+		{"大小写不敏感", parser.Annotations{{Key: "api.skip", Values: []string{"TRUE"}}}, "api.skip", true},
+		{"首值生效", parser.Annotations{{Key: "api.skip", Values: []string{"true", "false"}}}, "api.skip", true},
+		{"键不同", parser.Annotations{{Key: "api.skip", Values: []string{"true"}}}, "api.noauth", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := annoBool(tc.annos, tc.key); got != tc.want {
+				t.Errorf("annoBool(%+v, %q) = %v, want %v", tc.annos, tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGenerate_BooleanAnnoEmptyValueForms 端到端：三个布尔注解写成空值形态
+// （= ""，thriftgo 文法下唯一可从 IDL 写出的「无值」形态）必须生效——
+// 修复前 api.skip = "" 路由照进文档、api.noauth = "" 不免鉴权、
+// api.none = "" 字段照进 schema，三处全部静默失效（#223）。
+func TestGenerate_BooleanAnnoEmptyValueForms(t *testing.T) {
+	dir := t.TempDir()
+	idl := filepath.Join(dir, "bool.thrift")
+	content := `
+struct Q {
+    1: optional string keep
+    2: optional string drop (api.none = "")
+}
+service Svc {
+    void skipped(1: Q q) (api.post = "/skipped", api.skip = "")
+    void open(1: Q q) (api.post = "/open", api.noauth = "")
+    void normal(1: Q q) (api.post = "/normal")
+}
+`
+	if err := os.WriteFile(idl, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ast, err := parseIDL(idl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Generate(ast, Options{AuthScheme: "bearerAuth"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pathExists(doc, "/skipped") {
+		t.Error("api.skip = \"\" 必须豁免路由（bare 形态静默失效，#223）")
+	}
+	if !pathExists(doc, "/open") || !pathExists(doc, "/normal") {
+		t.Error("未豁免的路由必须保留")
+	}
+	if sec := doc.Paths.items["/open"].Post.Security; sec == nil || len(sec.Schemes) != 0 {
+		t.Errorf("api.noauth = \"\" 必须显式 security: [], got %+v", sec)
+	}
+	if sec := doc.Paths.items["/normal"].Post.Security; sec == nil || len(sec.Schemes) != 1 || sec.Schemes[0] != "bearerAuth" {
+		t.Errorf("普通路由应挂 bearerAuth, got %+v", sec)
+	}
+
+	body := doc.Paths.items["/open"].Post.RequestBody.Content.items["application/json"].Schema
+	if body.Properties.Get("keep") == nil {
+		t.Error("未标注字段必须保留")
+	}
+	if body.Properties.Get("drop") != nil {
+		t.Error("api.none = \"\" 必须排除字段（bare 形态静默失效，#223）")
+	}
+}
+
 // TestCSV flag 逗号拆分。
 func TestCSV(t *testing.T) {
 	got := csv(" /a, b ,,c ")
