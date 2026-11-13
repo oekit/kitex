@@ -89,7 +89,7 @@ require (
 	github.com/oekit/logx v0.10.0 // indirect
 	github.com/oekit/logx/kitexlog v0.1.12 // indirect
 	github.com/oekit/metrics v0.3.1 // indirect
-	github.com/oekit/tracing v0.4.3 // indirect
+	github.com/oekit/tracing v0.4.4 // indirect
 	github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
