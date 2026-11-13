@@ -27,17 +27,17 @@ const kitexMetricsKind = "kitex"
 // 是稳定公开接口，5s 粒度足以覆盖熔断状态的告警语义（迁移频率低）。
 const cbPollInterval = 5 * time.Second
 
-// normalizeCBState 把 gopkg circuitbreaker.State 映射到 resilience 状态值。
+// normalizeCBState 把 gopkg circuitbreaker.State 映射到 resilience 类型化状态。
 // 两族常量数值序相反（gopkg: Open=0/HalfOpen=1/Closed=2；
 // resilience 对齐 gobreaker: Closed=0/HalfOpen=1/Open=2），禁止直接 int()。
-func normalizeCBState(s gopkgcb.State) int {
+func normalizeCBState(s gopkgcb.State) resilience.CircuitState {
 	switch s {
 	case gopkgcb.Open:
-		return resilience.StateOpen
+		return resilience.CircuitStateOpen
 	case gopkgcb.HalfOpen:
-		return resilience.StateHalfOpen
+		return resilience.CircuitStateHalfOpen
 	default:
-		return resilience.StateClosed
+		return resilience.CircuitStateClosed
 	}
 }
 
@@ -49,11 +49,11 @@ func normalizeCBState(s gopkgcb.State) int {
 type cbStatePoller struct {
 	service  string
 	metrics  *resilience.Metrics
-	snapshot func() map[string]int // method key → 归一状态（测试注入点）
+	snapshot func() map[string]resilience.CircuitState // method key → 归一状态（测试注入点）
 
 	mu      sync.Mutex
-	last    map[string]int
-	lastAgg int
+	last    map[string]resilience.CircuitState
+	lastAgg resilience.CircuitState
 
 	stop     chan struct{}
 	stopOnce sync.Once
@@ -65,7 +65,7 @@ func newCBStatePoller(service string, m *resilience.Metrics, cbs *circuitbreak.C
 		metrics: m,
 		stop:    make(chan struct{}),
 	}
-	p.snapshot = func() map[string]int {
+	p.snapshot = func() map[string]resilience.CircuitState {
 		panel := cbs.ServicePanel()
 		if panel == nil {
 			return nil // panel 懒加载，首个请求前为 nil
@@ -80,7 +80,7 @@ func newCBStatePoller(service string, m *resilience.Metrics, cbs *circuitbreak.C
 		if len(breakers) == 0 {
 			return nil
 		}
-		out := make(map[string]int, len(breakers))
+		out := make(map[string]resilience.CircuitState, len(breakers))
 		for key, b := range breakers {
 			out[key] = normalizeCBState(b.State())
 		}
@@ -96,7 +96,7 @@ func (p *cbStatePoller) start(interval time.Duration) {
 	// 服务零流量期不存在，看板呈现 no-data 而非 closed，值班无法区分「正常」
 	// 与「采集断了」。启动时显式发一次 Closed，与 nns-endpoint 的
 	// 「gauge series 从熔断器创建即存在」原则对齐。
-	p.metrics.ObserveBreakerState(p.service, kitexMetricsKind, resilience.StateClosed)
+	p.metrics.ObserveBreakerStateTyped(p.service, kitexMetricsKind, resilience.CircuitStateClosed)
 	ticker := time.NewTicker(interval)
 	async.GoSafe(func() {
 		defer ticker.Stop()
@@ -124,10 +124,10 @@ func (p *cbStatePoller) Poll() {
 		// 无方法级快照（panel 懒加载首个请求前为 nil，或 DumpBreakers 为空）：
 		// 服务级聚合状态仍为 Closed，按空表继续走 emit 路径（#194）——
 		// 零流量期 gauge series 必须存在（closed），不能 no-data。
-		current = map[string]int{}
+		current = map[string]resilience.CircuitState{}
 	}
 
-	worst := resilience.StateClosed
+	worst := resilience.CircuitStateClosed
 	for _, st := range current {
 		if st > worst {
 			worst = st
@@ -139,7 +139,7 @@ func (p *cbStatePoller) Poll() {
 		if old, ok := p.last[key]; ok && old != st {
 			govLog.Warn("circuit breaker state change",
 				"service", p.service, "method", key,
-				"from", resilience.StateName(old), "to", resilience.StateName(st))
+				"from", old.String(), "to", st.String())
 		}
 	}
 	aggOld := p.lastAgg
@@ -147,9 +147,9 @@ func (p *cbStatePoller) Poll() {
 	p.lastAgg = worst
 	p.mu.Unlock()
 
-	p.metrics.ObserveBreakerState(p.service, kitexMetricsKind, worst)
+	p.metrics.ObserveBreakerStateTyped(p.service, kitexMetricsKind, worst)
 	if worst != aggOld {
-		p.metrics.ObserveTransition(p.service, kitexMetricsKind, aggOld, worst)
+		p.metrics.ObserveTransitionTyped(p.service, kitexMetricsKind, aggOld, worst)
 	}
 }
 
