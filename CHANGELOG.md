@@ -2,6 +2,10 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.8.2] — 2026-11-14
+
+- refactor: interface{} → any(1.18 别名,9 处)——panic 中间件/bridge/kitexmeta/熔断指标/kitexotel option/thrift2openapi,零行为差异可读性现代化
+
 ## [v0.8.1] — 2026-11-14
 
 - refactor(dualcontract): sort.Slice → slices.SortFunc（cmp 单比较函数，sort.Interface 三件套退役）+ reflect 遍历 for 计数 → range over int（Go 1.22）——排序口径不变，行为等价现代化
