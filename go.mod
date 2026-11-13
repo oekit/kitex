@@ -11,20 +11,20 @@ require (
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6
 	github.com/oekit/bootstrap v0.7.10
-	github.com/oekit/concurrency v0.35.0
+	github.com/oekit/concurrency v0.35.1
 	github.com/oekit/core v0.15.2
 	github.com/oekit/logx v0.10.0
 	github.com/oekit/metrics v0.3.1
-	github.com/oekit/nns v0.8.1
-	github.com/oekit/registry v0.5.17
-	github.com/oekit/registry/nacos v0.1.14
-	github.com/oekit/tracing v0.4.3
+	github.com/oekit/nns v0.8.2
+	github.com/oekit/registry v0.6.0
+	github.com/oekit/registry/nacos v0.2.0
+	github.com/oekit/tracing v0.4.4
 	github.com/prometheus/client_golang v1.25.0
 )
 
 require (
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/oekit/registry/nacosimpl v0.2.1 // indirect
+	github.com/oekit/registry/nacosimpl v0.3.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
