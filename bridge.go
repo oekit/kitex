@@ -165,7 +165,7 @@ func WithBizErrorMapper(m BizErrorMapper) BizErrorBridgeServerOption {
 // transmeta.ServerTTHeaderHandler 写 biz-status 头。
 func bizErrorMapperMW(mapper BizErrorMapper) endpoint.Middleware {
 	return func(next endpoint.Endpoint) endpoint.Endpoint {
-		return func(ctx context.Context, req, resp interface{}) error {
+		return func(ctx context.Context, req, resp any) error {
 			err := next(ctx, req, resp)
 			if err == nil {
 				// err==nil:成功,或 handler 显式抛的类型化 BizStatusError
@@ -197,7 +197,7 @@ func bizErrorMapperMW(mapper BizErrorMapper) endpoint.Middleware {
 // 抽出为包内 helper 以便测试直接调,避免 reflect 解 client.Option。
 func bizErrorBridgeMWBuilder(ctx context.Context) endpoint.Middleware {
 	return func(next endpoint.Endpoint) endpoint.Endpoint {
-		return func(ctx context.Context, req, resp interface{}) (err error) {
+		return func(ctx context.Context, req, resp any) (err error) {
 			err = next(ctx, req, resp)
 			if err == nil {
 				// 类型化业务错误在 middleware 链之后才附到 err(client.Call →
