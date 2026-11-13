@@ -37,8 +37,9 @@
 package dualcontract
 
 import (
+	"cmp"
 	"reflect"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -96,7 +97,7 @@ func ShapeOf(v any) Shape {
 		return Shape{}
 	}
 	var fields []FieldShape
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		if !f.IsExported() {
 			continue
@@ -300,21 +301,18 @@ func DiffShapes(httpReq, rpcReq any, opts ...DualContractOption) []FieldDiff {
 		}
 		diffs = append(diffs, FieldDiff{Field: name, Kind: DiffMissingHTTP, RPCType: rf.Type})
 	}
-	sort.Slice(diffs, func(i, j int) bool { return diffList(diffs).Less(i, j) })
+	slices.SortFunc(diffs, compareFieldDiff)
 	return diffs
 }
 
-// diffs 是可排序差异列表（按字段名排序，保证 diff 输出确定性——CI 门禁
-// 的错误信息必须稳定，map 遍历序不可用）。
-type diffList []FieldDiff
-
-func (d diffList) Len() int      { return len(d) }
-func (d diffList) Swap(i, j int) { d[i], d[j] = d[j], d[i] }
-func (d diffList) Less(i, j int) bool {
-	if d[i].Field != d[j].Field {
-		return d[i].Field < d[j].Field
+// compareFieldDiff 是 diffs 的全序比较（字段名，再 Kind）——保证 diff 输出确定性，
+// CI 门禁的错误信息必须稳定（map 遍历序不可用）。
+// （sort.Interface 三件套 Len/Swap/Less 退役，slices.SortFunc 单比较函数足矣。）
+func compareFieldDiff(a, b FieldDiff) int {
+	if c := cmp.Compare(a.Field, b.Field); c != 0 {
+		return c
 	}
-	return d[i].Kind < d[j].Kind
+	return cmp.Compare(a.Kind, b.Kind)
 }
 
 func indexByName(s Shape) map[string]FieldShape {
