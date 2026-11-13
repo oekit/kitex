@@ -61,15 +61,15 @@ func TestCBStatePoller_AggregationAndTransitions(t *testing.T) {
 	p := newCBStatePoller("echo-svc", m, nil)
 
 	// 注入 fake snapshot：echo 方法 open，其余 closed
-	p.snapshot = func() map[string]int {
-		return map[string]int{
-			"echo":  resilience.StateOpen,
-			"query": resilience.StateClosed,
+	p.snapshot = func() map[string]resilience.CircuitState {
+		return map[string]resilience.CircuitState{
+			"echo":  resilience.CircuitStateOpen,
+			"query": resilience.CircuitStateClosed,
 		}
 	}
 	p.Poll()
 	if got := metricValue(t, reg, "test_breaker_state",
-		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateOpen {
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != float64(resilience.CircuitStateOpen) {
 		t.Fatalf("expected aggregated open state, got %v", got)
 	}
 	if got := metricValue(t, reg, "test_breaker_transitions_total",
@@ -78,12 +78,12 @@ func TestCBStatePoller_AggregationAndTransitions(t *testing.T) {
 	}
 
 	// echo 恢复 closed → 聚合回 closed
-	p.snapshot = func() map[string]int {
-		return map[string]int{"echo": resilience.StateClosed, "query": resilience.StateClosed}
+	p.snapshot = func() map[string]resilience.CircuitState {
+		return map[string]resilience.CircuitState{"echo": resilience.CircuitStateClosed, "query": resilience.CircuitStateClosed}
 	}
 	p.Poll()
 	if got := metricValue(t, reg, "test_breaker_state",
-		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateClosed {
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != float64(resilience.CircuitStateClosed) {
 		t.Fatalf("expected aggregated closed after recovery, got %v", got)
 	}
 	if got := metricValue(t, reg, "test_breaker_transitions_total",
@@ -130,14 +130,14 @@ func TestCBMetricsOptions_RejectedCounting(t *testing.T) {
 // TestNormalizeCBState gopkg State（Open=0/HalfOpen=1/Closed=2）与
 // resilience 值序相反，映射必须显式且完整。
 func TestNormalizeCBState(t *testing.T) {
-	if normalizeCBState(0) != resilience.StateOpen {
-		t.Fatal("gopkg Open(0) must map to resilience.StateOpen")
+	if normalizeCBState(0) != resilience.CircuitStateOpen {
+		t.Fatal("gopkg Open(0) must map to resilience.CircuitStateOpen")
 	}
-	if normalizeCBState(1) != resilience.StateHalfOpen {
-		t.Fatal("gopkg HalfOpen(1) must map to resilience.StateHalfOpen")
+	if normalizeCBState(1) != resilience.CircuitStateHalfOpen {
+		t.Fatal("gopkg HalfOpen(1) must map to resilience.CircuitStateHalfOpen")
 	}
-	if normalizeCBState(2) != resilience.StateClosed {
-		t.Fatal("gopkg Closed(2) must map to resilience.StateClosed")
+	if normalizeCBState(2) != resilience.CircuitStateClosed {
+		t.Fatal("gopkg Closed(2) must map to resilience.CircuitStateClosed")
 	}
 }
 
@@ -203,11 +203,11 @@ func TestCBStatePoller_GaugeSeededBeforeFirstRequest(t *testing.T) {
 	reg := prom.NewRegistry()
 	m := resilience.NewMetrics(reg, "test")
 	p := newCBStatePoller("echo-svc", m, nil)
-	p.snapshot = func() map[string]int { return nil } // panel 未建（零流量）
+	p.snapshot = func() map[string]resilience.CircuitState { return nil } // panel 未建（零流量）
 
 	p.Poll()
 	if got := metricValue(t, reg, "test_breaker_state",
-		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateClosed {
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != float64(resilience.CircuitStateClosed) {
 		t.Fatalf("breaker_state series must exist (closed) before first request, got %v", got)
 	}
 }
@@ -220,20 +220,20 @@ func TestCBStatePoller_GaugeRecoversWhenBreakersDisappear(t *testing.T) {
 	m := resilience.NewMetrics(reg, "test")
 	p := newCBStatePoller("echo-svc", m, nil)
 
-	p.snapshot = func() map[string]int {
-		return map[string]int{"echo": resilience.StateOpen}
+	p.snapshot = func() map[string]resilience.CircuitState {
+		return map[string]resilience.CircuitState{"echo": resilience.CircuitStateOpen}
 	}
 	p.Poll()
 	if got := metricValue(t, reg, "test_breaker_state",
-		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateOpen {
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != float64(resilience.CircuitStateOpen) {
 		t.Fatalf("precondition: aggregated open, got %v", got)
 	}
 
 	// snapshot 变 nil（breaker 全部消失）→ gauge 回 closed + transition 留痕
-	p.snapshot = func() map[string]int { return nil }
+	p.snapshot = func() map[string]resilience.CircuitState { return nil }
 	p.Poll()
 	if got := metricValue(t, reg, "test_breaker_state",
-		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != resilience.StateClosed {
+		map[string]string{"service": "echo-svc", "kind": "kitex"}); got != float64(resilience.CircuitStateClosed) {
 		t.Fatalf("breaker_state must return to closed when breakers disappear, got %v", got)
 	}
 	if got := metricValue(t, reg, "test_breaker_transitions_total",
