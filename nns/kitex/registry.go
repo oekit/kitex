@@ -7,6 +7,7 @@ import (
 
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
 	nnsclient "github.com/oekit/nns/client"
+	ekiterr "github.com/oekit/pkg/errors"
 	"github.com/oekit/registry/sdbridge"
 )
 
@@ -93,14 +94,14 @@ func NewRegistry(c *nnsclient.ServiceClient, opts ...RegistryOption) kregistry.R
 // Register 将 Kitex 服务实例注册到 NNS 注册中心。
 func (r *nnsRegistry) Register(info *kregistry.Info) error {
 	if info == nil {
-		return fmt.Errorf("nns-kitex registry: info is nil")
+		return ekiterr.New("nns-kitex registry: info is nil")
 	}
 
 	// weight <= 0 时使用 r.defaultWeight 兜底（委托 sdbridge.ToInstance）；
 	// ServiceName 为空时按 resolveServiceName 兜底（#93）
 	inst, err := sdbridge.ToInstance(r.resolveServiceName(info.ServiceName), info.Addr, info.Weight, r.defaultWeight, info.Tags)
 	if err != nil {
-		return fmt.Errorf("nns-kitex registry: %w", err)
+		return ekiterr.Wrapf(err, "nns-kitex registry")
 	}
 
 	// ServiceClient.Register 使用 Bootstrap.ServiceName 和 GetPodIP，
@@ -112,7 +113,7 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 		if r.client.MockMode() {
 			return nil // mock 模式：静默跳过
 		}
-		return fmt.Errorf("nns-kitex registry: registrar unavailable (degraded, not mock mode); service would be undiscoverable")
+		return ekiterr.New("nns-kitex registry: registrar unavailable (degraded, not mock mode); service would be undiscoverable")
 	}
 	// 单次预算（#212，同 registry/kitex 的 #191）：接口无 ctx，这里以
 	// WithTimeout(Background) 补上，底层 Registrar 的取消/超时语义自此生效。
@@ -126,19 +127,19 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 // 依赖 metadata/权重匹配的注册中心才能正确注销。
 func (r *nnsRegistry) Deregister(info *kregistry.Info) error {
 	if info == nil {
-		return fmt.Errorf("nns-kitex registry: info is nil")
+		return ekiterr.New("nns-kitex registry: info is nil")
 	}
 
 	inst, err := sdbridge.ToInstance(r.resolveServiceName(info.ServiceName), info.Addr, info.Weight, r.defaultWeight, info.Tags)
 	if err != nil {
-		return fmt.Errorf("nns-kitex registry: %w", err)
+		return ekiterr.Wrapf(err, "nns-kitex registry")
 	}
 
 	if r.client.Registrar() == nil {
 		if r.client.MockMode() {
 			return nil // mock 模式：静默跳过
 		}
-		return fmt.Errorf("nns-kitex registry: registrar unavailable (degraded, not mock mode)")
+		return ekiterr.New("nns-kitex registry: registrar unavailable (degraded, not mock mode)")
 	}
 	// 单次预算（#212）：server.Stop 关停路径的 Deregister 不再有无限预算，
 	// 注册中心不可达时最多阻塞 deregisterTimeout。

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
+	ekiterr "github.com/oekit/pkg/errors"
 	"github.com/oekit/registry"
 	"github.com/oekit/registry/sdbridge"
 )
@@ -96,14 +97,14 @@ func NewRegistry(reg registry.Registrar, opts ...RegistryOption) kregistry.Regis
 func (r *kitexRegistry) Register(info *kregistry.Info) error {
 	inst, err := r.toInstance(info)
 	if err != nil {
-		return fmt.Errorf("kitex registry: register: %w", err)
+		return ekiterr.Wrapf(err, "kitex registry: register")
 	}
 	// 单次预算（#191）：接口无 ctx，这里以 WithTimeout(Background) 补上，
 	// 底层 Registrar 的取消/超时语义自此生效。
 	ctx, cancel := context.WithTimeout(context.Background(), r.registerTimeout)
 	defer cancel()
 	if err := r.reg.Register(ctx, inst); err != nil {
-		return fmt.Errorf("kitex registry: register %s: %w", inst.Service, err)
+		return ekiterr.Wrapf(err, "kitex registry: register %s", inst.Service)
 	}
 	return nil
 }
@@ -112,14 +113,14 @@ func (r *kitexRegistry) Register(info *kregistry.Info) error {
 func (r *kitexRegistry) Deregister(info *kregistry.Info) error {
 	inst, err := r.toInstance(info)
 	if err != nil {
-		return fmt.Errorf("kitex registry: deregister: %w", err)
+		return ekiterr.Wrapf(err, "kitex registry: deregister")
 	}
 	// 单次预算（#191）：server.Stop 关停路径的 Deregister 不再有无限预算，
 	// 注册中心不可达时最多阻塞 deregisterTimeout。
 	ctx, cancel := context.WithTimeout(context.Background(), r.deregisterTimeout)
 	defer cancel()
 	if err := r.reg.Deregister(ctx, inst); err != nil {
-		return fmt.Errorf("kitex registry: deregister %s: %w", inst.Service, err)
+		return ekiterr.Wrapf(err, "kitex registry: deregister %s", inst.Service)
 	}
 	return nil
 }
@@ -129,7 +130,7 @@ func (r *kitexRegistry) Deregister(info *kregistry.Info) error {
 // ServiceName 为空时使用 defaultServiceName 兜底，#93）。
 func (r *kitexRegistry) toInstance(info *kregistry.Info) (registry.Instance, error) {
 	if info == nil {
-		return registry.Instance{}, fmt.Errorf("info is nil")
+		return registry.Instance{}, ekiterr.New("info is nil")
 	}
 	name := info.ServiceName
 	if name == "" {

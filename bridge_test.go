@@ -3,7 +3,6 @@ package kitex
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/cloudwego/kitex/client"
@@ -349,7 +348,7 @@ func TestFromKitexError_PreservesCauseChain(t *testing.T) {
 
 	// BizStatusError:kitex 官方提取器对 bridged 错误仍应可识别
 	bse := kerrors.NewBizStatusError(1001, "order not found")
-	wrapped := fmt.Errorf("rpc layer: %w", bse)
+	wrapped := ekiterr.Wrapf(bse, "rpc layer")
 	biz3, ok := FromKitexError(wrapped)
 	if !ok {
 		t.Fatal("expected biz status bridged")

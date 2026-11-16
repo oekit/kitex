@@ -3,7 +3,6 @@ package kitex
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"runtime/debug"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"github.com/oekit/concurrency/async"
 	"github.com/oekit/core/lifecycle"
 	"github.com/oekit/logx"
+	ekiterr "github.com/oekit/pkg/errors"
 )
 
 // srvLog 是 server 生命周期专用 logger；治理配置日志见 govLog（component=kitex-gov）。
@@ -267,7 +267,7 @@ func checkProbeAddrFree(ctx context.Context, addr string) error {
 		return nil
 	}
 	if errors.Is(err, syscall.EADDRINUSE) {
-		return fmt.Errorf("ready probe addr %s is already in use: %w", addr, err)
+		return ekiterr.Wrapf(err, "ready probe addr %s is already in use", addr)
 	}
 	return nil
 }
@@ -311,14 +311,14 @@ func probeAndReady(ctx context.Context, app lifecycle.App, name string, cfg *run
 		}
 		// server 在探活通过前退出（典型：预检后端口被抢占 ⇒ kitex bind
 		// 失败 ⇒ svr.Run() 返回 error）：按启动失败处理，绝不回调 onReady。
-		return fmt.Errorf("kitex server exited before ready probe passed, addr=%s", cfg.probeAddr)
+		return ekiterr.Newf("kitex server exited before ready probe passed, addr=%s", cfg.probeAddr)
 	case <-ctx.Done():
 		return errProbeAborted
 	case <-time.After(timeout):
 		if ctx.Err() != nil {
 			return errProbeAborted
 		}
-		return fmt.Errorf("ready probe timeout after %s, addr=%s: server never started", timeout, cfg.probeAddr)
+		return ekiterr.Newf("ready probe timeout after %s, addr=%s: server never started", timeout, cfg.probeAddr)
 	}
 
 	for {
@@ -330,7 +330,7 @@ func probeAndReady(ctx context.Context, app lifecycle.App, name string, cfg *run
 			// 连上的是**他人**监听器而本进程 server 已启动失败时，不得回调。
 			select {
 			case <-runDone:
-				return fmt.Errorf("ready probe connected but kitex server already exited, addr=%s", cfg.probeAddr)
+				return ekiterr.Newf("ready probe connected but kitex server already exited, addr=%s", cfg.probeAddr)
 			default:
 			}
 			if ctx.Err() != nil {
@@ -345,7 +345,7 @@ func probeAndReady(ctx context.Context, app lifecycle.App, name string, cfg *run
 			return errProbeAborted
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("ready probe timeout after %s, addr=%s: %w", timeout, cfg.probeAddr, err)
+			return ekiterr.Wrapf(err, "ready probe timeout after %s, addr=%s", timeout, cfg.probeAddr)
 		}
 		select {
 		case <-ctx.Done():
