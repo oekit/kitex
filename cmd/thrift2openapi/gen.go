@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/cloudwego/thriftgo/parser"
+	ekiterr "github.com/oekit/pkg/errors"
 )
 
 // paramKinds 表驱动 api.* 参数注解 → OpenAPI 参数位置（#186）。
@@ -112,7 +113,7 @@ func (g *generator) run() error {
 	for _, svc := range g.ast.Services {
 		for _, fn := range svc.Functions {
 			if err := g.genFunction(svc, fn); err != nil {
-				return fmt.Errorf("%s.%s: %w", svc.Name, fn.Name, err)
+				return ekiterr.Wrapf(err, "%s.%s", svc.Name, fn.Name)
 			}
 		}
 	}
@@ -225,7 +226,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 			desc := cleanComment(f.ReservedComments)
 			s, err := g.schemaForType(f.Type)
 			if err != nil {
-				return nil, fmt.Errorf("field %s: %w", f.Name, err)
+				return nil, ekiterr.Wrapf(err, "field %s", f.Name)
 			}
 			applyDefault(s, f.Default)
 			// api.query/path/header/cookie 四个 case 逐行同构（#186）：表驱动收敛，
@@ -317,7 +318,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 			continue
 		}
 		if !strings.Contains(tpl, "{"+p.Name+"}") {
-			return nil, fmt.Errorf("path 参数 %q 未出现在路由模板 %q 中", p.Name, tpl)
+			return nil, ekiterr.Newf("path 参数 %q 未出现在路由模板 %q 中", p.Name, tpl)
 		}
 	}
 	op.Parameters = params
@@ -371,7 +372,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 // 其余内联）。
 func (g *generator) schemaForType(t *parser.Type) (*Schema, error) {
 	if t == nil {
-		return nil, fmt.Errorf("nil type")
+		return nil, ekiterr.New("nil type")
 	}
 	// typedef 解引用（含跨文件 typedef）。
 	if td, ok := g.resolveTypedef(t); ok {
@@ -428,7 +429,7 @@ func (g *generator) schemaForType(t *parser.Type) (*Schema, error) {
 		}
 		return g.structSchema(t.Name, st), nil
 	default:
-		return nil, fmt.Errorf("不支持的 thrift 类型 %q (category=%d)", t.Name, t.Category)
+		return nil, ekiterr.Newf("不支持的 thrift 类型 %q (category=%d)", t.Name, t.Category)
 	}
 }
 
@@ -492,7 +493,7 @@ func (g *generator) resolveStruct(t *parser.Type) (*parser.StructLike, error) {
 	if st, ok := cu.GetUnion(name); ok {
 		return st, nil
 	}
-	return nil, fmt.Errorf("找不到 struct %q", t.Name)
+	return nil, ekiterr.Newf("找不到 struct %q", t.Name)
 }
 
 // resolveEnum 解析 enum 引用（本文件或 include）。
@@ -501,7 +502,7 @@ func (g *generator) resolveEnum(t *parser.Type) (*parser.Enum, error) {
 	if e, ok := cu.GetEnum(name); ok {
 		return e, nil
 	}
-	return nil, fmt.Errorf("找不到 enum %q", t.Name)
+	return nil, ekiterr.Newf("找不到 enum %q", t.Name)
 }
 
 // resolveTypedef 解析 typedef 引用（本文件或 include）。

@@ -22,6 +22,7 @@ import (
 
 	"github.com/cloudwego/thriftgo/parser"
 	"github.com/cloudwego/thriftgo/semantic"
+	ekiterr "github.com/oekit/pkg/errors"
 )
 
 func main() {
@@ -55,7 +56,7 @@ func run(args []string) error {
 	}
 	if *idlPath == "" {
 		fs.Usage()
-		return fmt.Errorf("-idl 必填")
+		return ekiterr.New("-idl 必填")
 	}
 
 	ast, err := parseIDL(*idlPath)
@@ -86,7 +87,7 @@ func run(args []string) error {
 		out, err = marshalYAMLDoc(doc)
 	}
 	if err != nil {
-		return fmt.Errorf("序列化文档: %w", err)
+		return ekiterr.Wrapf(err, "序列化文档")
 	}
 
 	if *outPath == "" {
@@ -119,13 +120,13 @@ func csv(s string) []string {
 func parseIDL(path string) (*parser.Thrift, error) {
 	ast, err := parser.ParseFile(path, nil, true)
 	if err != nil {
-		return nil, fmt.Errorf("解析 %s: %w", path, err)
+		return nil, ekiterr.Wrapf(err, "解析 %s", path)
 	}
 	if err := semantic.ResolveSymbols(ast); err != nil {
-		return nil, fmt.Errorf("符号解析 %s: %w", path, err)
+		return nil, ekiterr.Wrapf(err, "符号解析 %s", path)
 	}
 	if _, err := semantic.NewChecker(semantic.Options{FixWarnings: true}).CheckAll(ast); err != nil {
-		return nil, fmt.Errorf("语义检查 %s: %w", path, err)
+		return nil, ekiterr.Wrapf(err, "语义检查 %s", path)
 	}
 	return ast, nil
 }
