@@ -1,7 +1,6 @@
 package kitex
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,6 +9,8 @@ import (
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/rpctimeout"
 	"github.com/oekit/core/governance"
+
+	ekiterr "github.com/oekit/pkg/errors"
 
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
@@ -109,7 +110,7 @@ func isDataIDSeparator(c byte) bool {
 // cli 为 ekit [nacos.NewConfigClient] 返回的配置客户端，与业务配置共享同一连接。
 func NewGovernanceConfig(cli config_client.IConfigClient, opts ...GovernanceOption) (*GovernanceConfig, error) {
 	if cli == nil {
-		return nil, fmt.Errorf("kitex governance: config client must not be nil")
+		return nil, ekiterr.New("kitex governance: config client must not be nil")
 	}
 	g := &GovernanceConfig{
 		cli:        cli,
@@ -248,7 +249,7 @@ func (g *GovernanceConfig) Close() error {
 		}); err != nil {
 			govLog.Warn("cancel listen failed", "dataId", id, logx.ErrKey, err)
 			if firstErr == nil {
-				firstErr = fmt.Errorf("cancel listen %s: %w", id, err)
+				firstErr = ekiterr.Wrapf(err, "cancel listen %s", id)
 			}
 		}
 	}
@@ -319,7 +320,7 @@ func (g *GovernanceConfig) subscribe(dataID string, callback func(string)) error
 			g.listening[dataID] = false
 			delete(g.callbacks, dataID)
 			g.mu.Unlock()
-			return fmt.Errorf("listen config %s: %w", dataID, err)
+			return ekiterr.Wrapf(err, "listen config %s", dataID)
 		}
 	}
 
