@@ -342,8 +342,8 @@ github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLA
 github.com/nishanths/predeclared v0.0.0-20200524104333-86fad755b4d3/go.mod h1:nt3d53pc1VYcphSCIaYAJtnPYnr3Zyn8fMq2wvPGPso=
 github.com/oekit/bootstrap v0.7.12 h1:F128dbdm58c2H1P6mF4jdIWO3q3DSR+o6byy71GGqjQ=
 github.com/oekit/bootstrap v0.7.12/go.mod h1:qEo8QNKPLdSjw7f6PB/UoZAG5l5f8EI8lgMOIUvaG+0=
-github.com/oekit/concurrency v0.37.0 h1:u5ZfRSdXuRxM4NJhsShOtSFSPK0WTqphmhdXahMgnd4=
-github.com/oekit/concurrency v0.37.0/go.mod h1:9TJXufRRJMu5JvcqaavJLqq18vnwIeLgj5mAF64y46w=
+github.com/oekit/concurrency v0.38.0 h1:wTd4v2flxlXSd3Y/FB0O5MFvNxCtDfXpTr6nlOLsmpU=
+github.com/oekit/concurrency v0.38.0/go.mod h1:2yrWmvB64qp1+6dQ70xc/HSJPhs1nCr7LU7t1BBXtL4=
 github.com/oekit/core v0.15.3 h1:3fARA1p797gCqsMf+lFqudLezX+KrEPngv7qYxgipQQ=
 github.com/oekit/core v0.15.3/go.mod h1:V8QhwANL928QtoZE6GeNsQ76DEqx8qkTxFqIz5oLvlM=
 github.com/oekit/logx v0.11.0 h1:dlDDIqs04ibDJ7HJg1O0gd/gXUbirFc4WPHgjQV5N/w=
