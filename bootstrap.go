@@ -19,21 +19,6 @@ import (
 // srvLog 是 server 生命周期专用 logger；治理配置日志见 govLog（component=kitex-gov）。
 var srvLog = logx.Delegating("kitex")
 
-// defaultReadyProbeTimeout 是 WithOnReady 启用后的默认探活超时。
-const defaultReadyProbeTimeout = 5 * time.Second
-
-// errProbeAborted 表示探活被**正常关停**打断（不是探活失败）。
-//
-// 语义拆分：**探活失败**（启动失败 ⇒ 按失败处理、请求关机）与**探活被关停打断**
-// （正常终止 ⇒ 预期路径）是两件事。关停不是失败——调用方用 errors.Is 判定后
-// 只记一条 Info，且不再调 app.RequestShutdown()（进程本就在关停，再请求一次
-// 是多余动作；旧实现把关停记成 ERROR「ready probe failed」，值班的人会误以为
-// 服务启动失败）。
-//
-// 该错误只由 probeAndReady 在 ctx 被取消时返回；探活超时等真正的启动失败
-// 仍返回普通 error。与 hertz 侧同名哨兵对称（#48）。
-var errProbeAborted = errors.New("ready probe aborted: app shutting down")
-
 // RunServerOption 配置 RunServer 的就绪回调行为。
 type RunServerOption func(*runServerConfig)
 
@@ -41,10 +26,11 @@ type runServerConfig struct {
 	onReady func(ctx context.Context)
 	// probeAddr 是 WithReadyAddr 指定的探活目标（host:port）。
 	probeAddr string
-	// probeTimeout 是探活超时；零值/缺省取 defaultReadyProbeTimeout。
+	// probeTimeout 是探活总超时；零值/缺省经 core/lifecycle.ReadyProbe 取
+	// DefaultProbeTimeout=5s（探活机制单源，#208）。
 	probeTimeout time.Duration
 	// probeDisabled 表示探活被显式禁用（WithReadyProbeTimeout 传负数，
-	// 与 hertz 侧同名 option 语义对齐，oekit#142）：onReady 改为在
+	// 禁用语义映射 ReadyProbe 的 Disabled()，#208）：onReady 改为在
 	// svr.Run() 前同步回调，不做端口探活。
 	probeDisabled bool
 }
@@ -69,11 +55,12 @@ func WithReadyAddr(addr string) RunServerOption {
 	return func(cfg *runServerConfig) { cfg.probeAddr = addr }
 }
 
-// WithReadyProbeTimeout 配置探活超时（零值/缺省 = 默认 5s；仅 WithReadyAddr
-// 生效）。设为**负数禁用探活**——与 hertz 侧同名 option 语义对齐（oekit#142，
-// 双协议服务复制配置时行为不漂移）：不做端口探活，onReady 在 svr.Run() 启动前
-// 同步回调。注意回调时端口可能尚未监听（kitex listener 在 svr.Run() 内部才
-// 绑定），消费方在注册窗口内可能拨到未就绪实例——仅在明确接受该窗口时使用。
+// WithReadyProbeTimeout 配置探活总超时（零值/缺省 = 默认 5s；仅 WithReadyAddr
+// 生效，超时机制单源 core/lifecycle.ReadyProbe，#208）。设为**负数禁用探活**
+// （禁用语义映射 ReadyProbe.Disabled()）：不做端口探活，onReady 在 svr.Run()
+// 启动前同步回调。注意回调时端口可能尚未监听（kitex listener 在 svr.Run()
+// 内部才绑定），消费方在注册窗口内可能拨到未就绪实例——仅在明确接受该窗口时
+// 使用。
 func WithReadyProbeTimeout(d time.Duration) RunServerOption {
 	return func(cfg *runServerConfig) {
 		cfg.probeTimeout = d
@@ -174,9 +161,10 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 		}()
 		if cfg.onReady != nil {
 			if cfg.probeAddr == "" || cfg.probeDisabled {
-				// 无探活目标，或显式禁用探活（WithReadyProbeTimeout 负数，
-				// 与 hertz 对齐，oekit#142）：Run 前同步回调（注册窗口毫秒级；
-				// 禁用路径下回调时端口可能尚未监听，见 WithReadyProbeTimeout）。
+				// 无探活目标，或显式禁用探活（WithReadyProbeTimeout 负数，禁用
+				// 语义映射 core/lifecycle.ReadyProbe 的 Disabled()，#208）：
+				// Run 前同步回调（注册窗口毫秒级；禁用路径下回调时端口可能
+				// 尚未监听，见 WithReadyProbeTimeout）。
 				srvLog.Info("kitex ready (no probe target, firing before Run)", "name", name)
 				cfg.onReady(app.Context())
 			} else {
@@ -226,12 +214,12 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 					if err == nil {
 						return
 					}
-					if errors.Is(err, errProbeAborted) {
-						// 正常关停打断探活（#48，与 hertz 同型）：**预期路径，
-						// 不是探活失败**。只记一条 Info，不请求关机——进程正在
-						// 关停，RequestShutdown 此刻是多余动作（旧实现此处打
-						// ERROR「ready probe failed, requesting shutdown」，
-						// 把关停误报成启动失败 ⇒ 值班误判 + 假告警）。
+					if errors.Is(err, lifecycle.ErrProbeAborted) {
+						// 正常关停打断探活（#48，哨兵单源 lifecycle.ErrProbeAborted，
+						// #208）：**预期路径，不是探活失败**。只记一条 Info，不请求
+						// 关机——进程正在关停，RequestShutdown 此刻是多余动作
+						// （旧实现此处打 ERROR「ready probe failed, requesting
+						// shutdown」，把关停误报成启动失败 ⇒ 值班误判 + 假告警）。
 						srvLog.Info("kitex ready probe aborted by shutdown", "name", name)
 						return
 					}
@@ -272,9 +260,18 @@ func checkProbeAddrFree(ctx context.Context, addr string) error {
 	return nil
 }
 
-// probeAndReady 探活目标地址，通过后执行 onReady。两阶段（#120；#137 为该
-// TOCTOU 的重报单，复审确认两阶段复核已覆盖其场景，对称 hertz
-// probeAndReady 的 IsRunning 门与复核）：
+// probeAndReady 探活目标地址，通过后执行 onReady。**探活机制单源委托
+// core/lifecycle.ReadyProbe（#208，自 hertz/kitex bootstrap 两侧逐字平行的
+// dial 循环下沉）**：等就绪门、循环 TCP dial（500ms 单次 dial / 100ms 重试 /
+// 总超时预算）、建连成功后的退出复核、OnReady 调用（panic 收编为 error，
+// core#152）与「关停优先于超时」（#48）全部由 ReadyProbe.Run 实现；本函数
+// 只剩 kitex 领域皮——目标地址解析（WithReadyAddr 的 host:port）、就绪门/
+// 复核信号来源（started：RegisterStartHook 在 listener 绑定成功进入 serving
+// 后触发；runDone：svr.Run() 返回即关闭，接线见 RunServer）、日志与 onReady
+// 的 app.Context() 传递。
+//
+// 两阶段复核语义（#120；#137 为该 TOCTOU 的重报单，复审确认两阶段复核已
+// 覆盖其场景，对称 hertz probeAndReady 的 IsRunning 门与复核）：
 //
 //  1. 等待「已开始服务」的正向信号：started（RegisterStartHook 触发——kitex
 //     listener 绑定成功、进入 serving 之后）或 runDone（svr.Run() 已返回）。
@@ -283,74 +280,32 @@ func checkProbeAddrFree(ctx context.Context, addr string) error {
 //     连上即回调会把不属于自己的实例注册到注册中心。单向门 + 复核后，单
 //     kitex server 进程内该误判路径闭合：started 只可能由本 server 绑定成功
 //     触发；端口被抢占时本 server bind 失败 ⇒ runDone 先就绪 ⇒ 按启动失败返回。
-//  2. 循环 TCP dial 探活目标；建连成功后**复核 runDone 未关闭**（对称 hertz
-//     探活成功后的 !IsRunning() 复核），再回调 onReady。
+//  2. 循环 TCP dial 探活目标；建连成功后**复核 runDone 未关闭**，再回调
+//     onReady。
 //
 // 探活必须与 svr.Run() 并发（#38）：监听端口是在 svr.Run() 内部才绑定的，
 // 串行先探活必然 connection refused、探活必超时、server 根本不会启动。
-// 探活期间 ctx 取消（app 关闭或 svr.Run() 返回）即中止，不触发 onReady。
 //
-// **关停与失败是两件事**（#48，与 hertz 同型）：ctx 被取消 ⇒ 探活是被正常
-// 关停打断（**预期路径**）⇒ 返回 errProbeAborted；调用方据此只记 Info，
+// **关停与失败是两件事**（#48）：ctx 被取消 ⇒ 探活是被正常关停打断（**预期
+// 路径**）⇒ Run 返回哨兵 lifecycle.ErrProbeAborted；调用方据此只记 Info，
 // 不请求关机。旧实现把关停记成 ERROR「ready probe failed」并再次
 // app.RequestShutdown() ⇒ 值班的人会误以为服务启动失败。
 func probeAndReady(ctx context.Context, app lifecycle.App, name string, cfg *runServerConfig, started, runDone <-chan struct{}) error {
-	timeout := cfg.probeTimeout
-	if timeout <= 0 {
-		timeout = defaultReadyProbeTimeout
-	}
-	deadline := time.Now().Add(timeout)
-
-	// 阶段一：等正向就绪信号（或失败/关停/超时）。每个分支先复核 ctx，
-	// 保证「关停优先」（#48）在信号同时就绪时仍然确定。
-	select {
-	case <-started:
-	case <-runDone:
-		if ctx.Err() != nil {
-			return errProbeAborted
-		}
-		// server 在探活通过前退出（典型：预检后端口被抢占 ⇒ kitex bind
-		// 失败 ⇒ svr.Run() 返回 error）：按启动失败处理，绝不回调 onReady。
-		return ekiterr.Newf("kitex server exited before ready probe passed, addr=%s", cfg.probeAddr)
-	case <-ctx.Done():
-		return errProbeAborted
-	case <-time.After(timeout):
-		if ctx.Err() != nil {
-			return errProbeAborted
-		}
-		return ekiterr.Newf("ready probe timeout after %s, addr=%s: server never started", timeout, cfg.probeAddr)
-	}
-
-	for {
-		d := net.Dialer{Timeout: 500 * time.Millisecond}
-		conn, err := d.DialContext(ctx, "tcp", cfg.probeAddr)
-		if err == nil {
-			_ = conn.Close()
-			// 阶段二复核（#120）：建连成功后复核 svr.Run() 未返回——
-			// 连上的是**他人**监听器而本进程 server 已启动失败时，不得回调。
-			select {
-			case <-runDone:
-				return ekiterr.Newf("ready probe connected but kitex server already exited, addr=%s", cfg.probeAddr)
-			default:
-			}
-			if ctx.Err() != nil {
-				return errProbeAborted
-			}
+	// 时序与禁用语义单源（#208）：cfg.probeTimeout 零值经 ReadyProbe 取
+	// DefaultProbeTimeout=5s（本地副本 defaultReadyProbeTimeout 已删除）；
+	// WithReadyProbeTimeout 负数在 RunServer 已路由到 svr.Run() 前的同步回调
+	// 路径，正常走不到这里——即便误入，ReadyProbe.Disabled() 语义下 Run 不发
+	// 任何 dial、返回 ErrProbeDisabled，按启动失败 fail-closed。
+	probe := lifecycle.NewReadyProbe(lifecycle.WithProbeTimeout(cfg.probeTimeout))
+	return probe.Run(ctx, lifecycle.ProbeRequest{
+		Target: func(context.Context) (string, string) { return "tcp", cfg.probeAddr },
+		// started 为正向就绪门（nil 时 Run 跳过等门直接 dial，与旧实现的
+		// select 语义一致）；runDone 为退出复核（nil 时跳过复核）。
+		Started: started,
+		Exited:  runDone,
+		OnReady: func(context.Context) {
 			srvLog.Info("kitex ready probe passed", "name", name, "addr", cfg.probeAddr)
 			cfg.onReady(app.Context())
-			return nil
-		}
-		// 关停优先于超时：ctx 已取消 ⇒ 探活是被正常关停打断，不是启动失败。
-		if ctx.Err() != nil {
-			return errProbeAborted
-		}
-		if time.Now().After(deadline) {
-			return ekiterr.Wrapf(err, "ready probe timeout after %s, addr=%s", timeout, cfg.probeAddr)
-		}
-		select {
-		case <-ctx.Done():
-			return errProbeAborted
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
+		},
+	})
 }

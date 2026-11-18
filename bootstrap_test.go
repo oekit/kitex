@@ -476,8 +476,9 @@ func TestRunServer_NegativeProbeTimeout_DisablesProbeSyncFires(t *testing.T) {
 	fa.cancel()
 }
 
-// TestWithReadyProbeTimeoutOptionSemantics 钉住 oekit#142 对齐后的 option
-// 边界语义：负数=禁用探活；零值/正数=不禁用（零值在 probeAndReady 内取默认 5s）。
+// TestWithReadyProbeTimeoutOptionSemantics 钉住 option 边界语义：负数=禁用
+// 探活；零值/正数=不禁用（零值经 core/lifecycle.ReadyProbe 取默认 5s，#208
+// 探活机制单源）。
 func TestWithReadyProbeTimeoutOptionSemantics(t *testing.T) {
 	cases := []struct {
 		name     string

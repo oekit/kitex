@@ -7,10 +7,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/oekit/core/lifecycle"
 )
 
 // TestProbeAndReady_AbortedReturnsSentinel 回归测试（#48，与 hertz 同型）：
-// ctx 被取消（正常关停）⇒ 探活必须返回**可判别**的 errProbeAborted。
+// ctx 被取消（正常关停）⇒ 探活必须返回**可判别**的 lifecycle.ErrProbeAborted
+// （哨兵单源 core/lifecycle，#208）。
 //
 // 旧实现返回的是裸 `errors.New("ready probe aborted: app shutting down")`
 // ——调用方拿不到哨兵 ⇒ 只能把所有错误一律当「探活失败」⇒ 关停被误报成
@@ -27,8 +30,8 @@ func TestProbeAndReady_AbortedReturnsSentinel(t *testing.T) {
 		probeTimeout: 30 * time.Second,
 		probeAddr:    "127.0.0.1:1", // 必然连不上的探活目标
 	}, nil, nil)
-	if !errors.Is(err, errProbeAborted) {
-		t.Fatalf("probeAndReady err = %v，期望 errProbeAborted", err)
+	if !errors.Is(err, lifecycle.ErrProbeAborted) {
+		t.Fatalf("probeAndReady err = %v，期望 lifecycle.ErrProbeAborted", err)
 	}
 }
 
@@ -49,7 +52,7 @@ func TestProbeAndReady_TimeoutIsNotAbort(t *testing.T) {
 	if err == nil {
 		t.Fatal("probeAndReady 在探活目标不可达时必须失败")
 	}
-	if errors.Is(err, errProbeAborted) {
+	if errors.Is(err, lifecycle.ErrProbeAborted) {
 		t.Fatalf("探活超时不得被报成 abort：%v", err)
 	}
 }
@@ -68,8 +71,8 @@ func TestProbeAndReady_AbortWinsOverTimeout(t *testing.T) {
 		probeTimeout: time.Nanosecond, // 立即超时
 		probeAddr:    "127.0.0.1:1",
 	}, nil, nil)
-	if !errors.Is(err, errProbeAborted) {
-		t.Fatalf("关停与超时同时发生时 err = %v，期望 errProbeAborted（关停优先）", err)
+	if !errors.Is(err, lifecycle.ErrProbeAborted) {
+		t.Fatalf("关停与超时同时发生时 err = %v，期望 lifecycle.ErrProbeAborted（关停优先）", err)
 	}
 }
 
@@ -101,7 +104,7 @@ func TestProbeAndReady_ServerExitedBeforeReady_NoReady(t *testing.T) {
 	if err == nil {
 		t.Fatal("端口被抢占且 server 已退出时，probeAndReady 必须失败")
 	}
-	if errors.Is(err, errProbeAborted) {
+	if errors.Is(err, lifecycle.ErrProbeAborted) {
 		t.Fatalf("端口被抢占是启动失败，不得报成 abort：%v", err)
 	}
 	if readyCalled.Load() != 0 {
@@ -168,7 +171,7 @@ func TestProbeAndReady_NeverStarted_TimesOut(t *testing.T) {
 	if err == nil {
 		t.Fatal("server 永不 started 时必须超时失败")
 	}
-	if errors.Is(err, errProbeAborted) {
+	if errors.Is(err, lifecycle.ErrProbeAborted) {
 		t.Fatalf("超时不得报成 abort：%v", err)
 	}
 }
