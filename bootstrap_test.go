@@ -159,6 +159,56 @@ func TestRunServer_StopCloserDelegates(t *testing.T) {
 	}
 }
 
+// TestRunServer_OnReadyNoTarget_WaitsForListener 钉住 #290：未指定探活目标
+// （无 WithReadyAddr）时，onReady 必须等 listener 绑定成功（Started 门，
+// RegisterStartHook）后才回调——回调发生时端口必须已在监听。
+//
+// 旧实现在 svr.Run() **之前**同步回调：回调时端口必然未监听，注册窗口内
+// 消费方会拨到未就绪实例（对称 hertz #131 已收敛的同型窗口）。要旧语义
+// （Run 前同步回调）需显式 WithReadyProbeTimeout(负数) 禁用探活。
+func TestRunServer_OnReadyNoTarget_WaitsForListener(t *testing.T) {
+	addr := reserveLoopbackAddr(t)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		t.Fatalf("resolve addr: %v", err)
+	}
+
+	fa := newFakeApp()
+	svr := echoservice.NewServer(&echoHandler{},
+		server.WithServiceAddr(tcpAddr),
+		server.WithExitWaitTime(200*time.Millisecond), // 测试快速排空
+	)
+	t.Cleanup(func() { _ = svr.Stop() })
+
+	var readyCalled atomic.Int64
+	listeningAtReady := atomic.Bool{}
+	RunServer(fa, "noaddr-svc", svr,
+		WithOnReady(func(ctx context.Context) {
+			readyCalled.Add(1)
+			// 回调时刻的端口可达性是本用例的核心断言面。
+			if c, derr := net.DialTimeout("tcp", addr, 2*time.Second); derr == nil {
+				_ = c.Close()
+				listeningAtReady.Store(true)
+			}
+		}),
+		// 不设 WithReadyAddr：走 Started 门路径（#290）。
+		WithReadyProbeTimeout(5*time.Second))
+
+	deadline := time.After(10 * time.Second)
+	for readyCalled.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("onReady not called within deadline (Started gate never opened)")
+		case <-fa.requestedCh:
+			t.Fatal("server requested shutdown before becoming ready")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	if !listeningAtReady.Load() {
+		t.Fatal("onReady 回调时端口未监听——回到了 Run 前同步回调的旧语义（#290 窗口）")
+	}
+}
+
 // TestRunServer_DocAnchorsExitWaitTime 钉住 RunServer doc 包含关键
 // 关闭语义关键字:ExitWaitTime (5s 默认 + K8s 时间关系公式)。
 //
@@ -408,15 +458,49 @@ func TestRunServer_ReadyProbeTimeout(t *testing.T) {
 	fa.cancel()
 }
 
-// TestRunServer_NoProbeAddr_FiresBeforeRun 钉住无探活目标路径：
-// onReady 在 Run 前同步执行。
-func TestRunServer_NoProbeAddr_FiresBeforeRun(t *testing.T) {
+// TestRunServer_NoProbeAddr_WaitsForStartedGate 钉住无探活目标路径的新语义
+// （#290，对称 hertz #131）：onReady 不再在 Run 前同步回调，而是等 Started
+// 门（RegisterStartHook）通过后回调——fakeServer 永不启动（钩子不触发）⇒
+// 按探活超时 fail-closed 请求关机、onReady 不得回调（不能把「未监听」的
+// 实例注册出去）。正向路径（真 server 等 listener 后回调）见
+// TestRunServer_OnReadyNoTarget_WaitsForListener；需要旧「Run 前同步回调」
+// 语义用 WithReadyProbeTimeout(负数) 显式禁用探活。
+func TestRunServer_NoProbeAddr_WaitsForStartedGate(t *testing.T) {
+	fa := newFakeApp()
+	// Run 保持阻塞（真 server 形态）：立即返回会让 GoBackground 收尾先
+	// cancelProbe，探活被判「正常关停打断」（ErrProbeAborted）而不请求关机
+	// ——那不是本用例要钉的 fail-closed 路径。
+	block := make(chan struct{})
+	svr := &fakeServer{runFunc: func() error { <-block; return nil }}
+	t.Cleanup(func() { close(block) })
+
+	var readyCalled atomic.Int64
+	RunServer(fa, "test-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyProbeTimeout(300*time.Millisecond))
+
+	select {
+	case <-fa.requestedCh:
+		// Started 门在探活预算内未打开：按启动失败请求关机（fail-closed）。
+	case <-time.After(3 * time.Second):
+		t.Fatal("started gate 未打开时必须按探活超时请求关机")
+	}
+	if got := readyCalled.Load(); got != 0 {
+		t.Fatalf("onReady called %d times, want 0（server 未 started 不得回调）", got)
+	}
+	fa.cancel()
+}
+
+// TestRunServer_ProbeDisabled_FiresBeforeRun 钉住显式禁用探活路径的保留
+// 语义（WithReadyProbeTimeout 负数）：onReady 在 Run 前同步执行。
+func TestRunServer_ProbeDisabled_FiresBeforeRun(t *testing.T) {
 	fa := newFakeApp()
 	svr := &fakeServer{}
 
 	var readyCalled atomic.Int64
 	RunServer(fa, "test-svc", svr,
-		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }))
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyProbeTimeout(-time.Second))
 
 	deadline := time.After(3 * time.Second)
 	for readyCalled.Load() == 0 {
@@ -424,7 +508,7 @@ func TestRunServer_NoProbeAddr_FiresBeforeRun(t *testing.T) {
 		case <-deadline:
 			t.Fatal("onReady not called within deadline")
 		case <-fa.requestedCh:
-			t.Fatal("no-probe path should not request shutdown")
+			t.Fatal("probe-disabled path should not request shutdown")
 		case <-time.After(10 * time.Millisecond):
 		}
 	}

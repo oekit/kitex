@@ -120,3 +120,17 @@ func assertPanic(t *testing.T, fn func()) {
 	}()
 	fn()
 }
+
+// TestNewRegistry_NilClientPanics 钉住 #289：具体类型指针 c 的 typed-nil
+// 装箱进 any 后 `dep == nil` 恒为 false——旧实现走 sdbridge.EnsureNotNil
+// 时 NewRegistry(nil) 静默放行，首次 Register 在框架注册 goroutine 里
+// nil deref。构造期必须 fail-fast。
+func TestNewRegistry_NilClientPanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("NewRegistry(nil) 必须 panic（构造期 fail-fast，#289）")
+		}
+	}()
+	_ = NewRegistry(nil)
+}
