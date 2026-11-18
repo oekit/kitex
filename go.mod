@@ -12,11 +12,11 @@ require (
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6
 	github.com/oekit/bootstrap v0.7.14
 	github.com/oekit/concurrency v0.39.1
-	github.com/oekit/core v0.17.0
+	github.com/oekit/core v0.17.1
 	github.com/oekit/logx v0.12.0
 	github.com/oekit/metrics v0.4.2
 	github.com/oekit/nns v0.9.3
-	github.com/oekit/registry v0.8.0
+	github.com/oekit/registry v0.8.1
 	github.com/oekit/registry/nacos v0.2.0
 	github.com/oekit/tracing v0.4.8
 	github.com/prometheus/client_golang v1.25.0
