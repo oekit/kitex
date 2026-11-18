@@ -2,6 +2,15 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.8.6] — 2026-11-19
+
+- 第二轮重复逻辑深挖审计（2026-11-19）kitex 修复：
+
+- fix: nns NewRegistry 的 nil fail-fast 改手写 c == nil 判定——sdbridge.EnsureNotNil 对具体类型指针恒 false（typed-nil 装箱进 any 后 dep == nil 不成立，hertz/nns 注释点名的坑），NewRegistry(nil) 此前静默放行、首次 Register 在框架注册 goroutine 里 nil deref；补 NewRegistry(nil) panic 回归；defaultWeight 裸 10 接 registry.DefaultInstanceWeight（#289）
+- fix: WithOnReady 无探活目标路径不再 Run 前同步回调——改走 ReadyProbe 空 Target 路径等 RegisterStartHook 的 Started 门（listener 绑定成功进入 serving）后回调，消除「注册中心已有实例但端口未监听」窗口（对称 hertz #131 已收敛口径）；显式禁用（WithReadyProbeTimeout 负数）保留旧同步回调语义；补真 server 回归断言回调时端口已在监听（#290）
+
+关联问题单：kitex#289、kitex#290。
+
 ## [v0.8.5] — 2026-11-18
 
 - 两项单源消费:RunServer 探活骨架委托 core/lifecycle.ReadyProbe(core#208,#142 口径更新为单源引用);kitex/nns 两 adapter 接入 sdbridge 注册预算/权重兜底,NewRegistry 补 EnsureNotNil(hertz#219 孪生收口);行为与导出面不变,地板 core v0.17.0/registry v0.8.0/pkg v0.54.0
