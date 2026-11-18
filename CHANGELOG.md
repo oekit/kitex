@@ -2,6 +2,10 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.8.5] — 2026-11-18
+
+- 两项单源消费:RunServer 探活骨架委托 core/lifecycle.ReadyProbe(core#208,#142 口径更新为单源引用);kitex/nns 两 adapter 接入 sdbridge 注册预算/权重兜底,NewRegistry 补 EnsureNotNil(hertz#219 孪生收口);行为与导出面不变,地板 core v0.17.0/registry v0.8.0/pkg v0.54.0
+
 ## [v0.8.4] — 2026-11-18
 
 - build: 矩阵依赖地板对齐(pkg v0.53.0/metrics v0.4.2)
