@@ -35,17 +35,21 @@ type runServerConfig struct {
 	probeDisabled bool
 }
 
-// WithOnReady 注册就绪回调：TCP 探活通过（WithReadyAddr 指定地址，默认
-// 未指定时立即回调）后执行，典型用途是触发延迟注册（app.Ready()，配合
-// bootstrap/nacos v0.3.0）。kitex server 无监听就绪 introspection，
-// 探活目标必须显式给出。
+// WithOnReady 注册就绪回调：TCP 探活通过（WithReadyAddr 指定地址）后执行，
+// 典型用途是触发延迟注册（app.Ready()，配合 bootstrap/nacos v0.3.0）。
+// 未指定探活目标时不再「Run 前立即回调」——对称 hertz #131 的收敛口径
+// （#290）：ReadyProbe 对空目标不发 dial，等 RegisterStartHook 的 Started
+// 门（listener 绑定成功进入 serving）通过后再回调，消除「注册中心已有
+// 实例但端口未监听」的窗口。需要旧语义（Run 前同步回调）用
+// WithReadyProbeTimeout(负数) 显式禁用探活。
 func WithOnReady(fn func(ctx context.Context)) RunServerOption {
 	return func(cfg *runServerConfig) { cfg.onReady = fn }
 }
 
 // WithReadyAddr 指定探活目标地址（host:port，即 server.WithServiceAddr 所配）。
-// 设置 WithOnReady 且未指定本项时：无探活目标，onReady 在 svr.Run 启动前
-// 同步执行（注册窗口毫秒级，见 doc 说明）。
+// 设置 WithOnReady 且未指定本项时：无探活目标，onReady 等 Started 门
+// （RegisterStartHook，listener 绑定成功）后回调（#290，对称 hertz #131），
+// 不再有「Run 前回调、端口未监听」的注册窗口。
 //
 // ⚠️ 探活目标必须是**本 server 自己绑定**的监听地址（契约）：端口被他人
 // 占用时本进程 server 必然绑定失败（kitex 监听失败 → svr.Run() 返回 error），
@@ -160,24 +164,28 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 			}
 		}()
 		if cfg.onReady != nil {
-			if cfg.probeAddr == "" || cfg.probeDisabled {
-				// 无探活目标，或显式禁用探活（WithReadyProbeTimeout 负数，禁用
-				// 语义映射 core/lifecycle.ReadyProbe 的 Disabled()，#208）：
-				// Run 前同步回调（注册窗口毫秒级；禁用路径下回调时端口可能
-				// 尚未监听，见 WithReadyProbeTimeout）。
-				srvLog.Info("kitex ready (no probe target, firing before Run)", "name", name)
+			if cfg.probeDisabled {
+				// 显式禁用探活（WithReadyProbeTimeout 负数，禁用语义映射
+				// core/lifecycle.ReadyProbe 的 Disabled()，#208）：Run 前同步
+				// 回调——调用方显式选择「回调时端口可能尚未监听」（见
+				// WithReadyProbeTimeout）。
+				srvLog.Info("kitex ready (probe disabled, firing before Run)", "name", name)
 				cfg.onReady(app.Context())
 			} else {
-				// 端口归属预检（#38）：探活目标端口若已被**他人**占用，本进程
-				// server 必然绑定失败（kitex 监听失败 → svr.Run() 返回 error →
-				// 按启动失败关机）。此时若继续探活，探活会连上对方的监听器并
-				// 误判就绪 ⇒ onReady 把不属于自己的实例注册到注册中心。故先
-				// 自己绑定一次确认端口空闲（占用则直接按启动失败处理）。
-				if err := checkProbeAddrFree(app.Context(), cfg.probeAddr); err != nil {
-					srvLog.Error("kitex ready probe target busy, requesting shutdown",
-						"name", name, "addr", cfg.probeAddr, logx.ErrKey, err)
-					app.RequestShutdown()
-					return
+				if cfg.probeAddr != "" {
+					// 端口归属预检（#38）：探活目标端口若已被**他人**占用，本进程
+					// server 必然绑定失败（kitex 监听失败 → svr.Run() 返回 error →
+					// 按启动失败关机）。此时若继续探活，探活会连上对方的监听器并
+					// 误判就绪 ⇒ onReady 把不属于自己的实例注册到注册中心。故先
+					// 自己绑定一次确认端口空闲（占用则直接按启动失败处理）。
+					// 无探活目标（probeAddr == ""）不做预检：ReadyProbe 对空
+					// addr 不发 dial，只等 Started 门（#290）。
+					if err := checkProbeAddrFree(app.Context(), cfg.probeAddr); err != nil {
+						srvLog.Error("kitex ready probe target busy, requesting shutdown",
+							"name", name, "addr", cfg.probeAddr, logx.ErrKey, err)
+						app.RequestShutdown()
+						return
+					}
 				}
 				// 就绪复核信号（#120；#137 系该 TOCTOU 的重报单，复审确认此修法
 				// 即其建议的第一种——「探活成功后复核 server 状态」：kitex 的

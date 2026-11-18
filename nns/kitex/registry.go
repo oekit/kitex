@@ -8,6 +8,7 @@ import (
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
 	nnsclient "github.com/oekit/nns/client"
 	ekiterr "github.com/oekit/pkg/errors"
+	"github.com/oekit/registry"
 	"github.com/oekit/registry/sdbridge"
 )
 
@@ -78,14 +79,19 @@ func WithDeregisterTimeout(d time.Duration) RegistryOption {
 // NewRegistry 创建基于 NNS ServiceClient 的 Kitex Registry。
 //
 // 返回的 Registry 可直接传给 Kitex Server 的 server.WithRegistry 选项。
-// c 为 nil 时构造期 panic fail-fast（hertz#219 孪生口径，单源
-// [sdbridge.EnsureNotNil]，#216）——配置错误启动即暴露，避免拖到框架内部
-// goroutine 才炸出「未知来源 panic」。
+// c 为 nil 时构造期 panic fail-fast（hertz#219 孪生口径，#216/#289）——
+// 配置错误启动即暴露，避免拖到框架内部 goroutine 才炸出「未知来源 panic」。
+// 判定用手写 c == nil 而非 [sdbridge.EnsureNotNil]：c 是具体类型指针，
+// 类型化 nil 指针装箱进 any 后 `dep == nil` 恒为 false（EnsureNotNil 文档
+// 明示的范围外形态，hertz/nns 侧注释点名过本坑）——EnsureNotNil 只适用于
+// 接口依赖。
 func NewRegistry(c *nnsclient.ServiceClient, opts ...RegistryOption) kregistry.Registry {
-	sdbridge.EnsureNotNil(c, "nns-kitex: NewRegistry", "client")
+	if c == nil {
+		panic("nns-kitex: NewRegistry: client 不能为 nil（构造期 fail-fast，#289）")
+	}
 	r := &nnsRegistry{
 		client:            c,
-		defaultWeight:     10,
+		defaultWeight:     int(registry.DefaultInstanceWeight),
 		registerTimeout:   sdbridge.DefaultRegisterBudget,
 		deregisterTimeout: sdbridge.DefaultRegisterBudget,
 	}

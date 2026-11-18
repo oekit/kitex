@@ -159,6 +159,56 @@ func TestRunServer_StopCloserDelegates(t *testing.T) {
 	}
 }
 
+// TestRunServer_OnReadyNoTarget_WaitsForListener 钉住 #290：未指定探活目标
+// （无 WithReadyAddr）时，onReady 必须等 listener 绑定成功（Started 门，
+// RegisterStartHook）后才回调——回调发生时端口必须已在监听。
+//
+// 旧实现在 svr.Run() **之前**同步回调：回调时端口必然未监听，注册窗口内
+// 消费方会拨到未就绪实例（对称 hertz #131 已收敛的同型窗口）。要旧语义
+// （Run 前同步回调）需显式 WithReadyProbeTimeout(负数) 禁用探活。
+func TestRunServer_OnReadyNoTarget_WaitsForListener(t *testing.T) {
+	addr := reserveLoopbackAddr(t)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		t.Fatalf("resolve addr: %v", err)
+	}
+
+	fa := newFakeApp()
+	svr := echoservice.NewServer(&echoHandler{},
+		server.WithServiceAddr(tcpAddr),
+		server.WithExitWaitTime(200*time.Millisecond), // 测试快速排空
+	)
+	t.Cleanup(func() { _ = svr.Stop() })
+
+	var readyCalled atomic.Int64
+	listeningAtReady := atomic.Bool{}
+	RunServer(fa, "noaddr-svc", svr,
+		WithOnReady(func(ctx context.Context) {
+			readyCalled.Add(1)
+			// 回调时刻的端口可达性是本用例的核心断言面。
+			if c, derr := net.DialTimeout("tcp", addr, 2*time.Second); derr == nil {
+				_ = c.Close()
+				listeningAtReady.Store(true)
+			}
+		}),
+		// 不设 WithReadyAddr：走 Started 门路径（#290）。
+		WithReadyProbeTimeout(5*time.Second))
+
+	deadline := time.After(10 * time.Second)
+	for readyCalled.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("onReady not called within deadline (Started gate never opened)")
+		case <-fa.requestedCh:
+			t.Fatal("server requested shutdown before becoming ready")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	if !listeningAtReady.Load() {
+		t.Fatal("onReady 回调时端口未监听——回到了 Run 前同步回调的旧语义（#290 窗口）")
+	}
+}
+
 // TestRunServer_DocAnchorsExitWaitTime 钉住 RunServer doc 包含关键
 // 关闭语义关键字:ExitWaitTime (5s 默认 + K8s 时间关系公式)。
 //
