@@ -11,14 +11,13 @@ package kitex
 
 import (
 	"context"
-	"net"
 	"testing"
-	"time"
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/server"
 
+	e2e "github.com/oekit/kitex/internal/e2e"
 	echo "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo"
 	echoservice "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo/echoservice"
 	ekiterr "github.com/oekit/pkg/errors"
@@ -50,47 +49,11 @@ func ekitBizErrMapper(err error) (int32, string, bool) {
 
 // startEchoServer 起一个真实 kitex server(随机端口,handler 可注入),
 // 返回地址;测试结束自动 Stop(startBizErrServer 的通用化)。
+// #301:实现收编 internal/e2e.StartEchoServer 单源(与 kitexotel/
+// e2e_meta_test.go 的 42 行逐字同体 helper 收敛),本文件只留兼容包装。
 func startEchoServer(t *testing.T, handler echo.EchoService, opts ...server.Option) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	addr := l.Addr().String()
-	_ = l.Close()
-
-	tcpAddr, taerr := net.ResolveTCPAddr("tcp", addr)
-	if taerr != nil {
-		t.Fatalf("resolve addr: %v", taerr)
-	}
-	base := make([]server.Option, 0, 2+len(opts))
-	base = append(base,
-		server.WithServiceAddr(tcpAddr),
-		server.WithExitWaitTime(200*time.Millisecond), // 测试快速排空
-	)
-	svr := echoservice.NewServer(handler, append(base, opts...)...)
-	runErr := make(chan error, 1)
-	go func() {
-		runErr <- svr.Run()
-	}()
-	go func() {
-		if err := <-runErr; err != nil {
-			t.Errorf("kitex server Run failed: %v", err)
-		}
-	}()
-	t.Cleanup(func() { _ = svr.Stop() })
-
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		c, derr := net.DialTimeout("tcp", addr, 100*time.Millisecond)
-		if derr == nil {
-			_ = c.Close()
-			return addr
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("e2e server not ready in time")
-	return ""
+	return e2e.StartEchoServer(t, handler, opts...)
 }
 
 // startBizErrServer 起一个返回类型化业务错误的真实 kitex server(随机端口),
