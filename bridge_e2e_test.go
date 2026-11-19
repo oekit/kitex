@@ -11,11 +11,16 @@ package kitex
 
 import (
 	"context"
+	stderrors "errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/kerrors"
+	"github.com/cloudwego/kitex/pkg/limit"
 	"github.com/cloudwego/kitex/server"
+	"github.com/oekit/concurrency/async"
 
 	e2e "github.com/oekit/kitex/internal/e2e"
 	echo "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo"
@@ -195,4 +200,63 @@ func TestE2E_BizErrorMapper_ServerSideSinglePoint(t *testing.T) {
 			t.Errorf("BizCode = %d, want 50000 (ErrBiz 兜底,未类型化)", biz.BizCode)
 		}
 	})
+}
+
+// overlimitReporter 统计服务端限流/连接数拒绝回调(overlimit canary 用)。
+type overlimitReporter struct {
+	connRej atomic.Int32
+	qpsRej  atomic.Int32
+}
+
+func (r *overlimitReporter) ConnOverloadReport() { r.connRej.Add(1) }
+func (r *overlimitReporter) QPSOverloadReport()  { r.qpsRej.Add(1) }
+
+// TestE2E_ServerOverlimitNotRemotelyIdentifiable #300 调查结论的 e2e canary:
+// server.WithLimit 的 QPS 拒绝(默认 thrift ping-pong,QPSLimitPostDecode=false)
+// 发生在解码前的 pipeline OnRead——服务端直接关连接、不写错误响应,client 只
+// 能拿到传输层失败(ErrRemoteOrNetwork DetailedError,"EOF peer close");
+// ErrOverlimit 哨兵是 server 侧构造,kerrors 哨兵不随线上传输(TApplication-
+// Exception typeID=6 与通用内部错误共用),client 侧 errors.Is 永不命中。
+//
+// 本 canary 钉住「限流拒绝在 client 侧不可识别为 overlimit」这一前提:
+// kitex 未来回传类型化超限错误(或 gRPC ResourceExhausted 反向映射落地)时
+// 本用例先红,提示重审 FromKitexError overlimit 段(bridge.go #300 注释)——
+// 该映射将从"可达的最近语义"升级为线上可达的真实映射,同时 DetailedError
+// 兜底不再吞掉此类错误。
+func TestE2E_ServerOverlimitNotRemotelyIdentifiable(t *testing.T) {
+	rep := &overlimitReporter{}
+	addr := startEchoServer(t, &echoHandler{},
+		server.WithLimit(&limit.Option{MaxConnections: 500, MaxQPS: 1}),
+		server.WithLimitReporter(rep),
+	)
+
+	cli, err := echoservice.NewClient("e2e-overlimit", client.WithHostPorts(addr))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	const n = 16
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		async.GoSafe(func() {
+			defer wg.Done()
+			_, errs[i] = cli.Echo(context.Background(), &echo.EchoRequest{Message: "x"})
+		})
+	}
+	wg.Wait()
+
+	if rep.qpsRej.Load() == 0 && rep.connRej.Load() == 0 {
+		t.Fatal("expected server-side overlimit rejections, none reported (MaxQPS=1 + 并发必超限)")
+	}
+	for i, err := range errs {
+		if err == nil {
+			continue // 限流窗口内放行的少数请求
+		}
+		// canary 核心:任何 client 侧错误都不得命中 overlimit 哨兵族。
+		if stderrors.Is(err, kerrors.ErrOverlimit) {
+			t.Fatalf("request %d error matches kerrors.ErrOverlimit — kitex 已在线上回传类型化超限错误,FromKitexError overlimit 段(#300)现在真实可达,请重审调查结论并回归 DetailedError 兜底不再吞该类错误: %v", i, err)
+		}
+	}
 }

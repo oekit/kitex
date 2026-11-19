@@ -229,7 +229,11 @@ func bizErrorBridgeMWBuilder(ctx context.Context) endpoint.Middleware {
 //   - kerrors.IsTimeoutError(链路超时):BizCode=50400, HTTPCode=504。
 //   - kerrors.ErrNoMoreInstance / ErrACL(无可用实例 / ACL 拒绝):
 //     BizCode=50300 / 40301, HTTPCode=503 / 403。
-//   - *kerrors.DetailedError 兜底:BizCode=50000, HTTPCode=500。
+//   - kerrors.ErrOverlimit 哨兵族(ErrConnOverLimit / ErrQPSOverLimit,服务端
+//     限流/连接数超限拒绝):BizCode=50300, HTTPCode=503(#300,对齐 middleware
+//     shedding 口径)。
+//   - *kerrors.DetailedError 兜底:BizCode=50000, HTTPCode=500, Message 为
+//     固定短文案 "rpc error"(#298)。
 //   - nil / 非 kitex 错误:返回 (nil, false),调用方走 fallback。
 //
 // 原始错误始终保留为 BizError.Cause(经 Unwrap 链可达):errors.Is /
@@ -274,10 +278,37 @@ func FromKitexError(err error) (*ekiterr.BizError, bool) {
 		return ekiterr.WrapBizErrorWithStatus(40301, 403, "request forbidden", err), true
 	}
 
+	// 3.5 服务端限流/连接数超限拒绝(#300) — 对齐 middleware shedding 口径
+	// (BizCode 50300 / HTTP 503,#291 三轨收敛:过载拒绝统一 50300)。
+	// 一个 errors.Is 覆盖哨兵族:ErrConnOverLimit / ErrQPSOverLimit 都是
+	// ErrOverlimit.WithCause 派生的 DetailedError(DetailedError.Is 命中
+	// de.basic == ErrOverlimit)。
+	//
+	// ⚠️ 可达性调查结论(探针实证,完整证据链见 issue #300):kitex 默认
+	// thrift ping-pong(server.WithLimit 路径,QPSLimitPostDecode=false)下,
+	// QPS 拒绝发生在解码前的 pipeline OnRead——服务端直接关连接、不写任何
+	// 错误响应,client 收到 DetailedError(ErrRemoteOrNetwork:"... EOF peer
+	// close");连接数超限(OnActive)同样只关连接。ErrOverlimit 哨兵是
+	// server 侧构造,kerrors 哨兵不随线上传输(typeID=6 InternalError 与
+	// 通用内部错误共用,无独立类型位),client 侧 errors.Is 永不命中——本段
+	// 是「可达的最近语义」:哨兵族一旦出现在 client 错误链(进程内构造、
+	// kitex 未来版本回传类型化错误、gRPC ResourceExhausted 反向映射等)即
+	// 正确归类为 50300,不再被 DetailedError 兜底误渲染成 50000/500"内部
+	// 错误"。不做文本匹配("request over limit"):误报面大且 kitex 未承诺
+	// 该文案契约。
+	if stderrors.Is(err, kerrors.ErrOverlimit) {
+		return ekiterr.WrapBizErrorWithStatus(50300, 503, "request over limit", err), true
+	}
+
 	// 4. DetailedError 兜底(RPC 异常的 StandardError + cause 链)
+	// Message 用固定短文案(#298):de.Error() 会携带本地传输层细节/远端原始
+	// 错误链全文,该 BizError 冒泡到 HTTP 侧时 writeBizError 会把 Message
+	// 原样回显进响应体,与 middleware.Fail「cause 不回显防内部细节泄漏」
+	// 的教义冲突。脱敏后排障信息不丢:原文经 BizError.Cause(Unwrap 链)可达,
+	// Fail 落 cause 日志即可定位。
 	var de *kerrors.DetailedError
 	if stderrors.As(err, &de) {
-		return ekiterr.WrapBizErrorWithStatus(50000, 500, de.Error(), err), true
+		return ekiterr.WrapBizErrorWithStatus(50000, 500, "rpc error", err), true
 	}
 
 	return nil, false

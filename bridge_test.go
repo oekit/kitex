@@ -3,6 +3,7 @@ package kitex
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/kitex/client"
@@ -98,7 +99,8 @@ func TestWithBizErrorBridge_NoInstance(t *testing.T) {
 	}
 }
 
-// TestWithBizErrorBridge_DetailedError 验证 DetailedError 兜底。
+// TestWithBizErrorBridge_DetailedError 验证 DetailedError 兜底,Message 为
+// 固定短文案(#298 脱敏回归,同 TestFromKitexError_DetailedError)。
 func TestWithBizErrorBridge_DetailedError(t *testing.T) {
 	inner := kerrors.ErrInternalException.WithCause(errors.New("boom"))
 	ep := invokeMiddleware(t, (&fakeEndpoint{err: inner}).wrap())
@@ -114,6 +116,10 @@ func TestWithBizErrorBridge_DetailedError(t *testing.T) {
 	}
 	if biz.BizCode != 50000 {
 		t.Errorf("BizCode = %d, want 50000", biz.BizCode)
+	}
+	if biz.Message != "rpc error" {
+		t.Errorf("Message = %q, want fixed %q (#298: 不得携带 de.Error() 全文)",
+			biz.Message, "rpc error")
 	}
 }
 
@@ -257,7 +263,48 @@ func TestFromKitexError_ACL(t *testing.T) {
 	}
 }
 
-// TestFromKitexError_DetailedError 验证 DetailedError 兜底转 50000。
+// TestFromKitexError_Overlimit #300:服务端限流/连接数超限的哨兵族统一走
+// 50300/503(对齐 middleware shedding 口径)。一个 errors.Is 覆盖整个哨兵族:
+// ErrConnOverLimit / ErrQPSOverLimit 都是 ErrOverlimit.WithCause 派生的
+// DetailedError,DetailedError.Is 命中 de.basic == ErrOverlimit。
+//
+// 可达性注意(探针实证,见 issue #300 调查结论):默认 thrift ping-pong 下
+// 该哨兵不随线上传输(client 收到的是 ErrRemoteOrNetwork DetailedError),
+// 本用例钉的是「哨兵族出现在 client 错误链时的归类」;线上拒绝的不可达性
+// 由 bridge_e2e_test.go 的 TestE2E_ServerOverlimitNotRemotelyIdentifiable
+// canary 钉住——kitex 未来回传类型化错误时该 canary 会先红。
+func TestFromKitexError_Overlimit(t *testing.T) {
+	for _, sentinel := range []error{kerrors.ErrOverlimit, kerrors.ErrConnOverLimit, kerrors.ErrQPSOverLimit} {
+		biz, ok := FromKitexError(sentinel)
+		if !ok || biz == nil {
+			t.Fatalf("[%v] expected BizError, got (%v, %v)", sentinel, biz, ok)
+		}
+		if biz.BizCode != 50300 {
+			t.Errorf("[%v] BizCode = %d, want 50300 (shedding 口径)", sentinel, biz.BizCode)
+		}
+		if biz.HTTPCode != 503 {
+			t.Errorf("[%v] HTTPCode = %d, want 503", sentinel, biz.HTTPCode)
+		}
+		if biz.Message != "request over limit" {
+			t.Errorf("[%v] Message = %q, want %q", sentinel, biz.Message, "request over limit")
+		}
+	}
+
+	// wrapped 形态(errors.Is 链式)同样命中。
+	wrapped := ekiterr.Wrapf(kerrors.ErrQPSOverLimit, "rpc layer")
+	biz, ok := FromKitexError(wrapped)
+	if !ok || biz == nil {
+		t.Fatalf("expected BizError for wrapped overlimit, got (%v, %v)", biz, ok)
+	}
+	if biz.BizCode != 50300 {
+		t.Errorf("wrapped BizCode = %d, want 50300", biz.BizCode)
+	}
+}
+
+// TestFromKitexError_DetailedError 验证 DetailedError 兜底转 50000,且
+// Message 为固定短文案(#298 脱敏回归):de.Error() 携带的传输层细节/错误链
+// 全文不得进 Message(否则经 writeBizError 回显进 HTTP 响应体),原文只留
+// Cause 链。
 // DetailedError 只能通过 basicError.WithCause/WithCauseAndStack 链式构造
 // (字段 unexported,无公开 NewDetailedError)。
 func TestFromKitexError_DetailedError(t *testing.T) {
@@ -272,8 +319,16 @@ func TestFromKitexError_DetailedError(t *testing.T) {
 	if biz.HTTPCode != 500 {
 		t.Errorf("HTTPCode = %d, want 500", biz.HTTPCode)
 	}
-	if biz.Message == "" {
-		t.Error("Message should be populated from DetailedError")
+	if biz.Message != "rpc error" {
+		t.Errorf("Message = %q, want fixed %q (#298: 不得携带 de.Error() 全文)",
+			biz.Message, "rpc error")
+	}
+	if strings.Contains(biz.Message, "test cause") {
+		t.Errorf("Message %q must not contain cause text (#298 脱敏)", biz.Message)
+	}
+	// 原始错误链不断:cause 经 Unwrap 可达,排障信息不丢。
+	if !errors.Is(biz, de) {
+		t.Error("errors.Is(biz, de) should hold via Cause chain")
 	}
 }
 
