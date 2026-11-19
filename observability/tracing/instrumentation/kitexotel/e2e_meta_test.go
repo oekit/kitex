@@ -1,27 +1,30 @@
 package kitexotel
 
 // 跨包 e2e 集成测试(audit 5.3 闭环):真实 kitex server+client 走完整
-// transport 链,验证此前只有单测覆盖的三条链路:
+// transport 链,验证此前只有单测覆盖的链路:
 //   1. kitexmeta   — ekit trace_id 经 metainfo 跨进程透传
 //   2. kitexotel   — OTel traceparent 经 metainfo 跨进程透传(v0.25.14 修复后)
-//   3. BizErrorBridge — 对端业务异常转 ekit BizError(含 Cause 链,v0.25.14 修复)
+//
+// BizErrorBridge 链路(原链路 3)已随 #301 删除:kitexotel 无桥接代码,本模块
+// 的该用例(#301 前滞留旧口径注释 + 断言兜底 50000)在改配正典形态后与根模块
+// bridge_e2e_test.go 的 TestE2E_BizErrorBridge_PostChainTypedBizError
+// (WithBizErrorBridgeServer + 类型化 1001)完全重复——正典以根模块单源为准。
 //
 // 生成代码在 internal/e2e/kitex_gen(用 kitex 工具对 examples/kitex/idl/echo.thrift 真实生成——
-// examples/kitex/kitex_gen 是手写桩,不做真 RPC,不能用于 e2e)。
+// examples/kitex/kitex_gen 是手写桩,不做真 RPC,不能用于 e2e);e2e server
+// 启动 helper 单源 internal/e2e.StartEchoServer(#301 收编,替换本地
+// startE2EServer 42 行副本)。
 
 import (
 	"context"
-	"net"
 
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/endpoint"
-	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/transmeta"
 
 	"github.com/cloudwego/kitex/server"
@@ -29,10 +32,9 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/oekit/kitex"
 	"github.com/oekit/kitex/kitexmeta"
-	ekiterrors "github.com/oekit/pkg/errors"
 
+	e2e "github.com/oekit/kitex/internal/e2e"
 	echo "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo"
 	echoservice "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo/echoservice"
 )
@@ -44,56 +46,12 @@ func (h *echoHandler) Echo(_ context.Context, req *echo.EchoRequest) (*echo.Echo
 	return &echo.EchoResponse{Message: req.Message, Timestamp: 1}, nil
 }
 
-// startE2EServer 起一个真实 kitex server(随机端口),返回地址;测试结束自动 Stop。
-func startE2EServer(t *testing.T, handler *echoHandler, opts ...server.Option) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	addr := l.Addr().String()
-	_ = l.Close()
-
-	tcpAddr, taerr := net.ResolveTCPAddr("tcp", addr)
-	if taerr != nil {
-		t.Fatalf("resolve addr: %v", taerr)
-	}
-	base := make([]server.Option, 0, 2+len(opts))
-	base = append(base,
-		server.WithServiceAddr(tcpAddr),
-		server.WithExitWaitTime(200*time.Millisecond), // 测试快速排空
-	)
-	svr := echoservice.NewServer(handler, append(base, opts...)...)
-	runErr := make(chan error, 1)
-	go func() {
-		runErr <- svr.Run()
-	}()
-	go func() {
-		if err := <-runErr; err != nil {
-			t.Errorf("kitex server Run failed: %v", err)
-		}
-	}()
-	t.Cleanup(func() { _ = svr.Stop() })
-
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		c, derr := net.DialTimeout("tcp", addr, 100*time.Millisecond)
-		if derr == nil {
-			_ = c.Close()
-			return addr
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("e2e server not ready in time")
-	return ""
-}
-
 // TestE2E_KitexMetaPropagation 链路 1(audit 5.3):client 经
 // kitexmeta.PropagateClientOption 注入 trace_id → 真实 transport →
 // server 端 kitexmeta.TraceIDFromContext 能取回。
 func TestE2E_KitexMetaPropagation(t *testing.T) {
 	var gotTraceID atomic.Value
-	addr := startE2EServer(t, &echoHandler{},
+	addr := e2e.StartEchoServer(t, &echoHandler{},
 		// server 端收 metainfo 需要 transmeta handler
 		server.WithMetaHandler(transmeta.MetainfoServerHandler),
 		server.WithMiddleware(func(next endpoint.Endpoint) endpoint.Endpoint {
@@ -134,7 +92,7 @@ func TestE2E_OTelTraceparentPropagation(t *testing.T) {
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 
 	var gotTraceparent atomic.Value
-	addr := startE2EServer(t, &echoHandler{},
+	addr := e2e.StartEchoServer(t, &echoHandler{},
 		server.WithMetaHandler(transmeta.MetainfoServerHandler),
 		server.WithMiddleware(func(next endpoint.Endpoint) endpoint.Endpoint {
 			return func(ctx context.Context, req, resp interface{}) error {
@@ -171,62 +129,10 @@ func TestE2E_OTelTraceparentPropagation(t *testing.T) {
 	}
 }
 
-// TestE2E_BizErrorBridge 链路 3(audit 5.3):server 端业务异常(BizStatusError)
-// 经真实 RPC + WithBizErrorBridge 转为 ekit *BizError 上抛,
-// 且 BizCode/Message 正确、原始错误经 Cause 链可达(v0.25.14 修复)。
-func TestE2E_BizErrorBridge(t *testing.T) {
-	// ⚠️ 业务异常必须经 server middleware 返回:kitex v0.16.3 实测,handler
-	// 直返 BizStatusError 在 thrift ping-pong 下会被 server 吞掉(client 收到
-	// nil,nil) — 类型化解码只有 ttstream/gRPC 流式支持。middleware 返回则
-	// 以 TApplicationException 文本进 DetailedError,桥接走 50000 兜底分支。
-	addr := startE2EServer(t, &echoHandler{},
-		server.WithMiddleware(func(next endpoint.Endpoint) endpoint.Endpoint {
-			return func(ctx context.Context, req, resp interface{}) error {
-				return kerrors.NewBizStatusError(1001, "biz boom")
-			}
-		}))
-
-	cli, err := echoservice.NewClient("e2e-echo",
-		client.WithHostPorts(addr), kitex.WithBizErrorBridge())
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
-
-	_, err = cli.Echo(context.Background(), &echo.EchoRequest{Message: "x"})
-	if err == nil {
-		t.Fatal("expected biz error, got nil")
-	}
-
-	var be *ekiterrors.BizError
-	if !errorsAs(err, &be) {
-		t.Fatalf("error should convert to *BizError, got %T: %v", err, err)
-	}
-	// ⚠️ kitex v0.16.3 实测语义:普通 thrift/TTHeader ping-pong 下,
-	// BizStatusError 不做类型化解码(仅 ttstream/gRPC 流式支持),以
-	// TApplicationException 文本进 DetailedError → 桥接走 50000 兜底分支。
-	// ⚠️ #298:兜底分支 Message 已脱敏为固定短文案 "rpc error"(de.Error()
-	// 全文不得回显进响应体);远端业务错误原文经 BizError.Cause(Unwrap 链)
-	// 可达,排障不丢。
-	if be.BizCode != 50000 {
-		t.Errorf("BizCode = %d, want 50000 (thrift ping-pong 兜底分支)", be.BizCode)
-	}
-	if be.Message != "rpc error" {
-		t.Errorf("Message = %q, want fixed %q (#298 脱敏)", be.Message, "rpc error")
-	}
-}
-
-// errorsAs 小包装,避免直接依赖 std errors 与 ekit pkg/errors 命名冲突。
-func errorsAs(err error, target *(*ekiterrors.BizError)) bool {
-	for err != nil {
-		if be, ok := err.(*ekiterrors.BizError); ok {
-			*target = be
-			return true
-		}
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
-}
+// TestE2E_BizErrorBridge(原链路 3)已于 #301 删除:本用例断言滞留旧口径
+// (「handler 直返 BizStatusError 被吞 (nil,nil)」「类型化仅 ttstream/gRPC
+// 流式支持」——bridge.go 修正说明已宣告为缺 meta handler 时的误判),改配
+// 正典形态(WithBizErrorBridgeServer + 断言类型化 1001)后与根模块
+// bridge_e2e_test.go 的 TestE2E_BizErrorBridge_PostChainTypedBizError 完全
+// 重复,且 kitexotel 无桥接代码——正典 e2e 以根模块单源为准:
+// 见 github.com/oekit/kitex 根仓 bridge_e2e_test.go。
