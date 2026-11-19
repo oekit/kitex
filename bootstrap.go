@@ -33,6 +33,9 @@ type runServerConfig struct {
 	// 禁用语义映射 ReadyProbe 的 Disabled()，#208）：onReady 改为在
 	// svr.Run() 前同步回调，不做端口探活。
 	probeDisabled bool
+	// stopWatchdogBudget 是 svr.Stop() 超预算告警的显式配置（#299）；
+	// 零值 = 未配置，回退 defaultStopWatchdogBudget。
+	stopWatchdogBudget time.Duration
 }
 
 // WithOnReady 注册就绪回调：TCP 探活通过（WithReadyAddr 指定地址）后执行，
@@ -69,6 +72,32 @@ func WithReadyProbeTimeout(d time.Duration) RunServerOption {
 	return func(cfg *runServerConfig) {
 		cfg.probeTimeout = d
 		cfg.probeDisabled = d < 0
+	}
+}
+
+// defaultStopWatchdogBudget 是 svr.Stop() 看门狗的缺省预算（#299）：closer
+// ctx 无 deadline 且未显式配置时的兜底值。量级对齐 timertask 的
+// DefaultShutdownDrainGrace 与 bootstrap 的 WithShutdownTimeout 缺省（10s），
+// 落在 AGENTS「探测类 ≤10s」超时纪律区间内。
+const defaultStopWatchdogBudget = 10 * time.Second
+
+// WithStopWatchdogBudget 配置 svr.Stop() 超预算未返回的看门狗告警阈值（#299）。
+//
+// 预算取值优先级（见 [stopWithWatchdog]）：closer ctx 携带 deadline
+// （core/lifecycle per-job 预算 / bootstrap.AddResourceTimeout 派生）时以
+// time.Until(deadline) 为准；无 deadline 时用本值；本项也未配置时用缺省
+// defaultStopWatchdogBudget（10s）——零配置即可用。d <= 0 回退缺省（对齐
+// bootstrap WithShutdownTimeout「0 = 未配置 → 回填默认」的口径，#206）。
+//
+// 看门狗不动 svr.Stop() 本身（kitex Stop 忽略传入 ctx，只受自身
+// ExitWaitTime 管辖，强杀也无从下刀）：预算耗尽仅打 Warn 留痕、Stop 继续
+// 跑到底——把「预算失效无信号、关停链无限期静默卡死」变成可观测事件。
+func WithStopWatchdogBudget(d time.Duration) RunServerOption {
+	return func(cfg *runServerConfig) {
+		if d <= 0 {
+			return
+		}
+		cfg.stopWatchdogBudget = d
 	}
 }
 
@@ -126,6 +155,16 @@ func WithReadyProbeTimeout(d time.Duration) RunServerOption {
 // bootstrap 单资源关闭预算(shutdown.New 的 defaultTimeout),避免排空被
 // bootstrap 兜底截断。kitex server.Stop() 忽略传入 ctx,使用自身 ExitWaitTime。
 //
+// # 停机预算看门狗(#299)
+//
+// 正因 Stop 忽略传入 ctx,core/lifecycle 的 per-job 预算只能取消 closer 的
+// ctx、不能终止阻塞中的 Stop——Stop 挂死时关停链无限期卡住且无信号(对照
+// hertz 侧 Shutdown(ctx) 预算可控可观测)。本函数注册的 closer 内置超预算
+// 看门狗:预算取 closer ctx 的 deadline(宿主 per-job 预算优先,零配置即可
+// 用),无 deadline 时用 WithStopWatchdogBudget / 缺省 10s;超预算未返回打
+// Warn「kitex Stop 超出关停预算仍未返回」留痕,不动 Stop 本身(强杀无从
+// 下刀,预警供运维升级到 SIGKILL 兜底)。
+//
 // 使用方式（在 bootstrap.Run 的 userFn 内）：
 //
 //	b, _ := bootstrap.New(bootstrap.WithServiceName("svc")) // + nacos/obs WithXxx 按需注入
@@ -148,8 +187,11 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 		opt(cfg)
 	}
 
-	app.AddResource(name, func(_ context.Context) error {
-		return svr.Stop()
+	// closer 内置超预算看门狗（#299，见 stopWithWatchdog）：kitex Stop 忽略
+	// 传入 ctx、只受自身 ExitWaitTime 管辖，宿主 per-job 预算取消 ctx 挡不住
+	// 阻塞中的 Stop——挂死即关停链无限期静默卡死，看门狗把它变成可观测事件。
+	app.AddResource(name, func(ctx context.Context) error {
+		return stopWithWatchdog(name, svr, ctx, cfg.stopWatchdogBudget)
 	})
 	app.GoBackground(name+"-run", func(_ context.Context) {
 		// runDone 在 svr.Run() 返回（启动失败 / 正常退出）后关闭，供探活
@@ -243,6 +285,37 @@ func RunServer(app lifecycle.App, name string, svr server.Server, opts ...RunSer
 			app.RequestShutdown()
 		}
 	})
+}
+
+// stopWithWatchdog 在 svr.Stop() 外包一层超预算看门狗（#299）：kitex Stop
+// 忽略传入 ctx、只受自身 ExitWaitTime 管辖（见 RunServer 关闭语义节），
+// core/lifecycle 的 per-job 预算只能取消 closer 的 ctx、无法终止阻塞中的
+// Stop——Stop 挂死时整条优雅关停链无限期卡住且无任何日志/错误信号（对照
+// hertz 侧 Shutdown(ctx) 预算可控）。看门狗在启动 Stop 前 AfterFunc 预算表、
+// Stop 返回后停表；超预算未返回即 logx Warn「kitex Stop 超出关停预算仍未
+// 返回」，把预算失效变成可观测事件。不动 Stop 本身。
+//
+// 预算取值（零配置可用）：
+//  1. closer ctx 有 deadline（core/lifecycle Manager per-job 预算 /
+//     bootstrap.AddResourceTimeout 派生的 jobCtx）→ time.Until(deadline)，
+//     宿主既定预算优先——deadline 已过期（Until <= 0）时 AfterFunc 立即
+//     触发，预算耗尽本身就是最响的信号；
+//  2. 无 deadline → WithStopWatchdogBudget 显式配置值；
+//  3. 未配置 → defaultStopWatchdogBudget（10s，量级对齐
+//     timertask.DefaultShutdownDrainGrace）。
+func stopWithWatchdog(name string, svr server.Server, ctx context.Context, cfgBudget time.Duration) error {
+	budget := cfgBudget
+	if budget <= 0 {
+		budget = defaultStopWatchdogBudget
+	}
+	if dl, ok := ctx.Deadline(); ok {
+		budget = time.Until(dl)
+	}
+	watchdog := time.AfterFunc(budget, func() {
+		srvLog.Warn("kitex Stop 超出关停预算仍未返回", "name", name, "budget", budget)
+	})
+	defer watchdog.Stop()
+	return svr.Stop()
 }
 
 // checkProbeAddrFree 确认探活目标端口当前可绑定（#38 端口归属预检；预检通过

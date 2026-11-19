@@ -204,11 +204,14 @@ func TestE2E_BizErrorBridge(t *testing.T) {
 	// ⚠️ kitex v0.16.3 实测语义:普通 thrift/TTHeader ping-pong 下,
 	// BizStatusError 不做类型化解码(仅 ttstream/gRPC 流式支持),以
 	// TApplicationException 文本进 DetailedError → 桥接走 50000 兜底分支。
+	// ⚠️ #298:兜底分支 Message 已脱敏为固定短文案 "rpc error"(de.Error()
+	// 全文不得回显进响应体);远端业务错误原文经 BizError.Cause(Unwrap 链)
+	// 可达,排障不丢。
 	if be.BizCode != 50000 {
 		t.Errorf("BizCode = %d, want 50000 (thrift ping-pong 兜底分支)", be.BizCode)
 	}
-	if !strings.Contains(be.Message, "biz error: code=1001") {
-		t.Errorf("Message = %q, want embedded biz error text", be.Message)
+	if be.Message != "rpc error" {
+		t.Errorf("Message = %q, want fixed %q (#298 脱敏)", be.Message, "rpc error")
 	}
 }
 

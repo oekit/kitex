@@ -232,7 +232,8 @@ func bizErrorBridgeMWBuilder(ctx context.Context) endpoint.Middleware {
 //   - kerrors.ErrOverlimit 哨兵族(ErrConnOverLimit / ErrQPSOverLimit,服务端
 //     限流/连接数超限拒绝):BizCode=50300, HTTPCode=503(#300,对齐 middleware
 //     shedding 口径)。
-//   - *kerrors.DetailedError 兜底:BizCode=50000, HTTPCode=500。
+//   - *kerrors.DetailedError 兜底:BizCode=50000, HTTPCode=500, Message 为
+//     固定短文案 "rpc error"(#298)。
 //   - nil / 非 kitex 错误:返回 (nil, false),调用方走 fallback。
 //
 // 原始错误始终保留为 BizError.Cause(经 Unwrap 链可达):errors.Is /
@@ -300,9 +301,14 @@ func FromKitexError(err error) (*ekiterr.BizError, bool) {
 	}
 
 	// 4. DetailedError 兜底(RPC 异常的 StandardError + cause 链)
+	// Message 用固定短文案(#298):de.Error() 会携带本地传输层细节/远端原始
+	// 错误链全文,该 BizError 冒泡到 HTTP 侧时 writeBizError 会把 Message
+	// 原样回显进响应体,与 middleware.Fail「cause 不回显防内部细节泄漏」
+	// 的教义冲突。脱敏后排障信息不丢:原文经 BizError.Cause(Unwrap 链)可达,
+	// Fail 落 cause 日志即可定位。
 	var de *kerrors.DetailedError
 	if stderrors.As(err, &de) {
-		return ekiterr.WrapBizErrorWithStatus(50000, 500, de.Error(), err), true
+		return ekiterr.WrapBizErrorWithStatus(50000, 500, "rpc error", err), true
 	}
 
 	return nil, false
