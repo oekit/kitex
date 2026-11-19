@@ -3,6 +3,7 @@ package kitex
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/kitex/client"
@@ -98,7 +99,8 @@ func TestWithBizErrorBridge_NoInstance(t *testing.T) {
 	}
 }
 
-// TestWithBizErrorBridge_DetailedError 验证 DetailedError 兜底。
+// TestWithBizErrorBridge_DetailedError 验证 DetailedError 兜底,Message 为
+// 固定短文案(#298 脱敏回归,同 TestFromKitexError_DetailedError)。
 func TestWithBizErrorBridge_DetailedError(t *testing.T) {
 	inner := kerrors.ErrInternalException.WithCause(errors.New("boom"))
 	ep := invokeMiddleware(t, (&fakeEndpoint{err: inner}).wrap())
@@ -114,6 +116,10 @@ func TestWithBizErrorBridge_DetailedError(t *testing.T) {
 	}
 	if biz.BizCode != 50000 {
 		t.Errorf("BizCode = %d, want 50000", biz.BizCode)
+	}
+	if biz.Message != "rpc error" {
+		t.Errorf("Message = %q, want fixed %q (#298: 不得携带 de.Error() 全文)",
+			biz.Message, "rpc error")
 	}
 }
 
@@ -257,7 +263,10 @@ func TestFromKitexError_ACL(t *testing.T) {
 	}
 }
 
-// TestFromKitexError_DetailedError 验证 DetailedError 兜底转 50000。
+// TestFromKitexError_DetailedError 验证 DetailedError 兜底转 50000,且
+// Message 为固定短文案(#298 脱敏回归):de.Error() 携带的传输层细节/错误链
+// 全文不得进 Message(否则经 writeBizError 回显进 HTTP 响应体),原文只留
+// Cause 链。
 // DetailedError 只能通过 basicError.WithCause/WithCauseAndStack 链式构造
 // (字段 unexported,无公开 NewDetailedError)。
 func TestFromKitexError_DetailedError(t *testing.T) {
@@ -272,8 +281,16 @@ func TestFromKitexError_DetailedError(t *testing.T) {
 	if biz.HTTPCode != 500 {
 		t.Errorf("HTTPCode = %d, want 500", biz.HTTPCode)
 	}
-	if biz.Message == "" {
-		t.Error("Message should be populated from DetailedError")
+	if biz.Message != "rpc error" {
+		t.Errorf("Message = %q, want fixed %q (#298: 不得携带 de.Error() 全文)",
+			biz.Message, "rpc error")
+	}
+	if strings.Contains(biz.Message, "test cause") {
+		t.Errorf("Message %q must not contain cause text (#298 脱敏)", biz.Message)
+	}
+	// 原始错误链不断:cause 经 Unwrap 可达,排障信息不丢。
+	if !errors.Is(biz, de) {
+		t.Error("errors.Is(biz, de) should hold via Cause chain")
 	}
 }
 
