@@ -2,6 +2,13 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [observability/tracing/instrumentation/kitexotel/v0.7.17] — 2026-11-20
+
+- fix(bridge): DetailedError 兜底 Message 脱敏——de.Error() 全文改固定短文案 rpc error，原文留 Cause 链经 Fail 落日志（#298）
+fix(bootstrap): RunServer closer 加 Stop 看门狗，超关停预算未返回打 Warn（#299）
+fix(bridge): FromKitexError 加 overlimit 映射段（ErrOverlimit 哨兵族→50300/503）；探针实证 client 侧远端不可识别，canary 钉住前提（#300）
+refactor(e2e): startEchoServer 收编 internal/e2e 导出；kitexotel 断言对齐正典类型化 1001（重复用例删除）；kitexprom 文档补 latency_us 单位说明（#301）
+
 ## [v0.8.7] — 2026-11-20
 
 - fix(bridge): DetailedError 兜底 Message 脱敏——de.Error() 全文（传输层细节/远端错误链）改固定短文案 rpc error，原文留 Cause 链经 Fail 落日志；此前经 writeBizError 原样回显 HTTP 响应体，穿透 cause 不回显防泄漏教义（#298）
