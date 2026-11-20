@@ -2,6 +2,13 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.8.7] — 2026-11-20
+
+- fix(bridge): DetailedError 兜底 Message 脱敏——de.Error() 全文（传输层细节/远端错误链）改固定短文案 rpc error，原文留 Cause 链经 Fail 落日志；此前经 writeBizError 原样回显 HTTP 响应体，穿透 cause 不回显防泄漏教义（#298）
+fix(bootstrap): RunServer closer 加 Stop 看门狗——超关停预算未返回打 Warn（预算取 ctx deadline→WithStopWatchdogBudget→缺省 10s）；此前 Stop 挂死时整条关停链无限期卡死且无信号（#299）
+fix(bridge): FromKitexError 加 overlimit 映射段（ErrOverlimit 哨兵族→50300/503，对齐 shedding 口径）——限流拒绝此前被 DetailedError 兜底成 50000/500 内部错误；探针实证 client 侧远端不可识别（哨兵不随线上传输），canary 钉住前提（#300）
+refactor(e2e): startEchoServer 收编 internal/e2e 导出（42 行×2 逐字副本消除，kitexotel 可 import）；kitexotel BizErrorBridge 断言对齐正典类型化 1001（滞留 bridge.go #94 已作废旧口径的重复用例删除）；kitexprom 文档补 latency_us 单位说明（#301）
+
 ## [v0.8.6] — 2026-11-19
 
 - 第二轮重复逻辑深挖审计（2026-11-19）kitex 修复：
