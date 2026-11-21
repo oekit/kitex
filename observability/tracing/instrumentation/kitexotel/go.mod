@@ -55,7 +55,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/oekit/logx v0.12.0 // indirect
+	github.com/oekit/logx v0.12.1 // indirect
 	github.com/oekit/tracing v0.4.8 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
