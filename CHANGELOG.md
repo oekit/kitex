@@ -2,6 +2,18 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.9.0] — 2026-11-21
+
+- 第三轮设计/缺陷审计（2026-11-21）kitex 修复：
+
+- fix: 两处 NewResolver 补 nil fail-fast（接口走 EnsureNotNil、具体指针 c==nil）——lbcache 刷新 goroutine 裸 panic 堵死（#315）
+- feat: chainmw.ToKitex 自动注入 transport 上下文（operation 从 rpcinfo 推导、kind 区分 grpc/thrift），ServerContext 变可选覆盖——AccessLog SkipPaths/Redact 不再因漏挂 ServerContext 失效（#315）
+- fix: transportx ReplyHeader 改用 metainfo.SendBackwardValue 真正回传——MetadataPropagate 在 kitex 上不再恒 no-op（#315）
+- feat: WithBizErrorBridge 组合 AllErrorRetry 运行期告警一次 + godoc 明确禁止（#315）
+- feat: 治理订阅可观测+自愈——SubscriptionStates/Degraded + 指数退避后台重试（WithGovernanceRetryBackoff）；NewClientSuite/NewServerSuite 在 gov==nil 且显式启用策略时构造期 fail-fast——Nacos 抖动不再让治理层静默裸奔且永不恢复（#315）
+
+关联问题单：kitex#315。
+
 ## [observability/tracing/instrumentation/kitexotel/v0.7.17] — 2026-11-20
 
 - fix(bridge): DetailedError 兜底 Message 脱敏——de.Error() 全文改固定短文案 rpc error，原文留 Cause 链经 Fail 落日志（#298）
