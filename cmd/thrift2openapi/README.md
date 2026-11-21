@@ -26,6 +26,38 @@ thrift2openapi -idl idl/api.thrift -o api.swagger.json -json
 | `-auth` | 全局鉴权方案名（如 `bearerAuth`）：输出 securitySchemes 并给全部路由挂 security |
 | `-auth-exempt` | **免 JWT 标记**（逗号分隔）：文档中显式 `security: []` |
 | `-envelope` | 统一响应包络 `{code, msg, data}` |
+| `-envelope-fields` | **包络字段定制**（逗号分隔、有序）：如 `code,data,message,trace_id`——名为 `data` 的字段承载业务载荷，其余按名取类型（code→integer、msg/message→string、trace_id→string）；空=缺省 `code,msg,data` |
+| `-error-responses` | **统一错误响应模板**（`code=描述` 逗号分隔）：如 `400=参数错误,401=未登录或 token 失效`；免鉴权路由（`api.noauth` / `-auth-exempt`）跳过 401 |
+| `-extra-routes` | **IDL 外路由补录表**（YAML/JSON 文件）：把手写路由（探活/共享模块/网关身份回显等）补进文档 |
+
+## 补录表（`-extra-routes`）
+
+每个服务都有有意留在 IDL 外的路由（组织级共享模块注册的探活、读网关注入头回显
+身份等）——`-exempt`/`api.skip` 只有「豁免」没有「补录」，本参数把消费方后处理
+脚本里的手工注入表收编进工具。文件形态（YAML，JSON 亦可）：
+
+```yaml
+- method: GET
+  path: /ping
+  tag: Infra
+  summary: Ping
+  plain: true          # text/plain string 响应（非统一包络）
+  security: []         # 空 = security: []（免鉴权）
+- method: GET
+  path: /api/v2/user/info
+  tag: Identity
+  summary: UserInfo
+  data:                # 包络 data 的内联 schema
+    userId: {type: string}
+    username: {type: string}
+  security: [{bearerAuth: []}]
+```
+
+- `plain` / `data` 覆盖两类消费方实测形态（非包络探活 vs 包络回显）；两者皆无时只输出 200 描述。
+- `security` 缺省跟随全局 `-auth`；显式空列表输出 `security: []`。
+- `responses` 可附加额外响应（`"400": 参数错误`）。
+- 补录在豁免删除之后应用：允许与 `-exempt` 并存、允许覆盖同名 method+path 的内联生成操作。
+- 非法条目（坏方法/坏 path/重复）构造期报错，不静默丢。
 
 ## 注解体系
 
