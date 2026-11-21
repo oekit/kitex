@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
+	"github.com/cloudwego/kitex/pkg/retry"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/transmeta"
 	"github.com/cloudwego/kitex/pkg/utils"
@@ -490,5 +491,102 @@ func TestWithBizErrorBridge_TTHeaderPrereqs(t *testing.T) {
 	}
 	if len(o.MWBs) != 1 {
 		t.Errorf("len(MWBs) = %d, want 1 (bridge middleware)", len(o.MWBs))
+	}
+}
+
+// applyClientOptions 按 kitex Options.Apply 的语义（先普通 option、再
+// TailOptions）应用一组 client.Option，返回最终 Options（#315 构造期检测用）。
+func applyClientOptions(t *testing.T, opts ...client.Option) *client.Options {
+	t.Helper()
+	o := &client.Options{Configs: rpcinfo.NewRPCConfig()}
+	var di utils.Slice
+	for _, op := range opts {
+		op.F(o, &di)
+	}
+	for _, op := range o.TailOptions {
+		op.F(o, &di)
+	}
+	o.TailOptions = nil
+	return o
+}
+
+// TestBizErrorRetryConflict_AllErrorRetry 回归（#315）：WithBizErrorBridge 与
+// retry.AllErrorRetry 组合必须在构造期被识别（TailOption 覆盖 option 顺序）。
+func TestBizErrorRetryConflict_AllErrorRetry(t *testing.T) {
+	// bridge 在前、retry 在后：F 内直接检测会漏掉，tail 检测必须覆盖。
+	o := applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithSpecifiedResultRetry(retry.AllErrorRetry()),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("AllErrorRetry conflict not detected (retry option after bridge)")
+	}
+
+	// retry 在前、bridge 在后同样必须命中。
+	o = applyClientOptions(t,
+		client.WithSpecifiedResultRetry(retry.AllErrorRetry()),
+		WithBizErrorBridge(),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("AllErrorRetry conflict not detected (retry option before bridge)")
+	}
+}
+
+// TestBizErrorRetryConflict_FailurePolicy FailurePolicy/MixedPolicy 内嵌的
+// ShouldResultRetry 同样是重试谓词来源，必须识别。
+func TestBizErrorRetryConflict_FailurePolicy(t *testing.T) {
+	fp := retry.NewFailurePolicyWithResultRetry(retry.AllErrorRetry())
+	o := applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithFailureRetry(fp),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("FailurePolicy with AllErrorRetry not detected")
+	}
+
+	mixed := retry.NewMixedPolicyWithResultRetry(10, retry.AllErrorRetry())
+	o = applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithMixedRetry(mixed),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("MixedPolicy with AllErrorRetry not detected")
+	}
+}
+
+// TestBizErrorRetryConflict_Excluded predicate 显式排除 *BizError 时不得误报。
+func TestBizErrorRetryConflict_Excluded(t *testing.T) {
+	safe := &retry.ShouldResultRetry{
+		ErrorRetryWithCtx: func(_ context.Context, err error, _ rpcinfo.RPCInfo) bool {
+			if _, isBiz := ekiterr.AsBizError(err); isBiz {
+				return false
+			}
+			return err != nil
+		},
+	}
+	o := applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithSpecifiedResultRetry(safe),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) != 0 {
+		t.Fatalf("biz-error-excluding predicate must not conflict, got %v", got)
+	}
+
+	// 无 result-retry 配置时同样无冲突。
+	o = applyClientOptions(t, WithBizErrorBridge())
+	if got := bizErrorRetryConflictSources(o); len(got) != 0 {
+		t.Fatalf("no retry config must not conflict, got %v", got)
+	}
+}
+
+// TestBizErrorRetryConflict_PanicPredicateIgnored 诊断探测不能打挂构造：
+// 自定义谓词 panic 时按不冲突处理。
+func TestBizErrorRetryConflict_PanicPredicateIgnored(t *testing.T) {
+	rr := &retry.ShouldResultRetry{
+		ErrorRetryWithCtx: func(context.Context, error, rpcinfo.RPCInfo) bool { panic("boom") },
+	}
+	o := applyClientOptions(t, WithBizErrorBridge(), client.WithSpecifiedResultRetry(rr))
+	if got := bizErrorRetryConflictSources(o); len(got) != 0 {
+		t.Fatalf("panicking predicate must be ignored, got %v", got)
 	}
 }

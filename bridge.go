@@ -3,16 +3,20 @@ package kitex
 import (
 	"context"
 	stderrors "errors"
+	"strings"
+	"sync"
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
+	"github.com/cloudwego/kitex/pkg/retry"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/transmeta"
 	"github.com/cloudwego/kitex/pkg/utils"
 	"github.com/cloudwego/kitex/server"
 	"github.com/cloudwego/kitex/transport"
 
+	"github.com/oekit/logx"
 	ekiterr "github.com/oekit/pkg/errors"
 )
 
@@ -38,6 +42,34 @@ import (
 // ⚠️ 收敛发生在链内:client fallback / retry 看到的 err 从 nil 变为
 // *BizError(业务错误本身);业务错误经 rpcinfo 的判定路径
 // (fallback 内 ri.Invocation().BizStatusErr())仍然可用。
+//
+// # ⚠️ 禁止与 retry.AllErrorRetry() 同用(#315)
+//
+// kitex 的 result-retry 谓词对**任意非 nil error** 成立时就会重试,而
+// [retry.AllErrorRetry] 正是 `err != nil` 的官方 common choice。开启本桥
+// 后,类型化业务错误(余额不足/重复下单等)被改写成非 nil *BizError——重试
+// 容器会把它当成可重试失败,在支付/下单这类非幂等 RPC 上造成重复扣款。
+//
+// 本 option 在构造期用一枚合成 *BizError 探测 result-retry 谓词(覆盖
+// `WithSpecifiedResultRetry`、`WithFailureRetry(...)`/`WithRetryMethodPolicies`
+// 内嵌的 FailurePolicy/MixedPolicy),命中即告警一次。探测本身不会打挂构造
+// (谓词 panic 按不冲突吞掉);为避免漏报,自定义谓词仍必须自行排除 *BizError:
+//
+//	// ❌ 业务失败会被重放
+//	client.WithSpecifiedResultRetry(retry.AllErrorRetry())
+//
+//	// ✅ 只重试链路错误
+//	client.WithSpecifiedResultRetry(&retry.ShouldResultRetry{
+//	    ErrorRetryWithCtx: func(ctx context.Context, err error, ri rpcinfo.RPCInfo) bool {
+//	        if _, isBiz := ekiterr.AsBizError(err); isBiz {
+//	            return false
+//	        }
+//	        return err != nil
+//	    },
+//	})
+//
+// 重试容器(含 [NewClientSuite] 的 Nacos 热更 retry)同样消费该谓词,组合时
+// 按同一口径排除 *BizError。
 //
 // # TTHeader 传输前提(#94)
 //
@@ -81,7 +113,85 @@ func WithBizErrorBridge() client.Option {
 		for _, opt := range parts {
 			opt.F(o, di)
 		}
+		// TailOption 在全部 client.Option 应用完之后执行：WithSpecifiedResultRetry
+		// / WithFailureRetry 无论排在本 option 之前还是之后都已落进 Options，
+		// 此时检测才能覆盖完整组合（#315）。
+		o.TailOptions = append(o.TailOptions, client.Option{F: func(o *client.Options, di *utils.Slice) {
+			warnBizErrorRetryConflict(o)
+		}})
 	}}
+}
+
+// bizBridgeLog 是 BizError 桥接的控制面日志（构造期告警）。
+var bizBridgeLog = logx.Delegating("kitex-bridge")
+
+// bizErrorRetryWarnOnce 保证进程内只告警一次（同一配置可能构造多个 client）。
+var bizErrorRetryWarnOnce sync.Once
+
+// retriesBizError 用一枚合成 *BizError 探测 result-retry 谓词：返回 true
+// 表示该谓词会把桥接后的业务错误当成可重试失败（retry.AllErrorRetry 的
+// `err != nil` 即命中）。
+//
+// 不用函数指针比对：闭包代码指针在不同 Go 版本/内联决策下不稳定（CI 已
+// 实证 1.26 与 1.27 行为不同），语义探测与「谓词实际看到 *BizError」完全
+// 同口径。谓词契约是纯判定函数，探测一次可接受；若自定义谓词 panic（如
+// 解引用 nil ri），按不冲突处理并吞掉——诊断探测不能把 client 构造打挂。
+func retriesBizError(rr *retry.ShouldResultRetry) (retried bool) {
+	if rr == nil || rr.ErrorRetryWithCtx == nil {
+		return false
+	}
+	probeErr := ekiterr.NewBizError(40001, "biz-error-bridge probe")
+	probeRI := rpcinfo.NewRPCInfo(
+		rpcinfo.NewEndpointInfo("probe-from", "Probe", nil, nil),
+		rpcinfo.NewEndpointInfo("probe-to", "Probe", nil, nil),
+		rpcinfo.NewInvocation("probe", "Probe"),
+		rpcinfo.NewRPCConfig(),
+		rpcinfo.NewRPCStats(),
+	)
+	defer func() {
+		if recover() != nil {
+			retried = false
+		}
+	}()
+	return rr.ErrorRetryWithCtx(context.Background(), probeErr, probeRI)
+}
+
+// bizErrorRetryConflictSources 返回与 *BizError 冲突的 result-retry 配置来源。
+// 覆盖 client.WithSpecifiedResultRetry 与 WithFailureRetry/WithRetryMethodPolicies
+// 内嵌的 FailurePolicy/MixedPolicy；RetryContainer 的谓词由 client.Init 从
+// UnaryOptions.RetryWithResult 注入，因此同一检测对 Suite 注入的容器生效。
+func bizErrorRetryConflictSources(o *client.Options) []string {
+	if o == nil {
+		return nil
+	}
+	var sources []string
+	if retriesBizError(o.UnaryOptions.RetryWithResult) {
+		sources = append(sources, "client.WithSpecifiedResultRetry(...) retries *BizError")
+	}
+	for method, p := range o.UnaryOptions.RetryMethodPolicies {
+		if p.FailurePolicy != nil && retriesBizError(p.FailurePolicy.ShouldResultRetry) {
+			sources = append(sources, "retry policy method="+method)
+		}
+		if p.MixedPolicy != nil && retriesBizError(p.MixedPolicy.ShouldResultRetry) {
+			sources = append(sources, "mixed retry policy method="+method)
+		}
+	}
+	return sources
+}
+
+// warnBizErrorRetryConflict 在构造期检测「BizError 桥 + 会重试 *BizError 的
+// result-retry 谓词」（retry.AllErrorRetry 是常见命中）并告警一次。无法据此
+// 自动关闭重试（谓词对任意非 nil error 成立），故只做显式信号；godoc 已
+// 明确禁止同用并给出排除 *BizError 的写法。
+func warnBizErrorRetryConflict(o *client.Options) {
+	sources := bizErrorRetryConflictSources(o)
+	if len(sources) == 0 {
+		return
+	}
+	bizErrorRetryWarnOnce.Do(func() {
+		bizBridgeLog.Warn("WithBizErrorBridge conflicts with a result-retry predicate that retries *BizError (e.g. retry.AllErrorRetry): business failures (payment/order) may be replayed; exclude *BizError from the retry predicate",
+			"sources", strings.Join(sources, ", "))
+	})
 }
 
 // WithBizErrorBridgeServer 返回与 [WithBizErrorBridge] 对称的 kitex server.Option:

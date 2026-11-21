@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	ktransport "github.com/cloudwego/kitex/transport"
 	"github.com/oekit/core/chain"
 	"github.com/oekit/core/transport"
 	"github.com/oekit/kitex/transportx"
@@ -101,4 +103,124 @@ func TestServerContextHeaderRoundTrip(t *testing.T) {
 
 func transportFromServer(ctx context.Context) (transport.Transporter, bool) {
 	return transport.FromServerContext(ctx)
+}
+
+// serverRPCInfoCtx 构造带 server 侧 rpcinfo 的 ctx（模拟 Kitex 服务端链内）。
+func serverRPCInfoCtx(proto ktransport.Protocol) context.Context {
+	to := rpcinfo.NewEndpointInfo("echo", "Echo", nil, nil)
+	from := rpcinfo.NewEndpointInfo("caller", "Call", nil, nil)
+	inv := rpcinfo.NewInvocation("echo", "Echo")
+	cfg := rpcinfo.NewRPCConfig()
+	rpcinfo.AsMutableRPCConfig(cfg).SetTransportProtocol(proto)
+	ri := rpcinfo.NewRPCInfo(from, to, inv, cfg, rpcinfo.NewRPCStats())
+	return rpcinfo.NewCtxWithRPCInfo(context.Background(), ri)
+}
+
+// captureTransport 返回记录链内 transport 信息的 chain.Middleware 与快照指针。
+type tmwCapture struct {
+	seen bool
+	kind string
+	op   string
+}
+
+func captureTransport(c *tmwCapture) chain.Middleware {
+	return func(next chain.Handler) chain.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			if tr, ok := transport.FromServerContext(ctx); ok {
+				c.seen = true
+				c.kind = string(tr.Kind())
+				c.op = tr.Operation()
+				if tr.RequestHeader() == nil || tr.ReplyHeader() == nil {
+					panic("transportx headers must not be nil")
+				}
+			}
+			return next(ctx, req)
+		}
+	}
+}
+
+// TestToKitex_AutoInjectsServerContext 回归（#315）：不挂 ServerContext 时
+// ToKitex 也必须从 rpcinfo 自动注入 transport 上下文，AccessLog 的 op 不能
+// 是 "-"（否则 SkipPaths / RedactPathPrefixes 整体失效）。
+func TestToKitex_AutoInjectsServerContext(t *testing.T) {
+	cases := []struct {
+		name     string
+		proto    ktransport.Protocol
+		wantKind string
+		wantOp   string
+	}{
+		{"thrift-framed", ktransport.Framed, "thrift", "echo.Echo"},
+		{"thrift-ttheader", ktransport.TTHeaderFramed, "thrift", "echo.Echo"},
+		{"grpc", ktransport.GRPC, "grpc", "/echo/Echo"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var c tmwCapture
+			h := ToKitex(captureTransport(&c))(func(context.Context, any, any) error { return nil })
+			if err := h(serverRPCInfoCtx(tc.proto), nil, &struct{}{}); err != nil {
+				t.Fatalf("endpoint err = %v", err)
+			}
+			if !c.seen {
+				t.Fatal("ToKitex must auto-inject server transport context")
+			}
+			if c.op == "-" || c.op == "" {
+				t.Fatalf("operation must be derived from rpcinfo, got %q", c.op)
+			}
+			if c.op != tc.wantOp || c.kind != tc.wantKind {
+				t.Fatalf("kind/op = %s/%s, want %s/%s", c.kind, c.op, tc.wantKind, tc.wantOp)
+			}
+		})
+	}
+}
+
+// TestToKitex_KeepsExplicitServerTransport 显式注入优先：链内已有 server
+// transport（外层 ServerContext 或手工注入）时不覆盖，ServerContext 退化为
+// 可选覆盖手段。
+func TestToKitex_KeepsExplicitServerTransport(t *testing.T) {
+	base := transportx.ServerContext(context.Background(), "manual-endpoint", "/manual/Method")
+	var c tmwCapture
+	h := ToKitex(captureTransport(&c))(func(context.Context, any, any) error { return nil })
+	if err := h(base, nil, &struct{}{}); err != nil {
+		t.Fatalf("endpoint err = %v", err)
+	}
+	if !c.seen || c.op != "/manual/Method" {
+		t.Fatalf("explicit transport must win, got seen=%v op=%q", c.seen, c.op)
+	}
+}
+
+// TestToKitex_ServerContextMiddlewareOverride 显式 ServerContext 中间件仍可
+// 覆盖自动推导的 operation。
+func TestToKitex_ServerContextMiddlewareOverride(t *testing.T) {
+	var c tmwCapture
+	ep := ToKitex(captureTransport(&c))(func(context.Context, any, any) error { return nil })
+	// 外层显式覆盖：先注入，再进 ToKitex（ToKitex 检测到已注入并保留）。
+	outer := ServerContext("/override/Method")
+	if err := outer(ep)(serverRPCInfoCtx(ktransport.Framed), nil, &struct{}{}); err != nil {
+		t.Fatalf("endpoint err = %v", err)
+	}
+	if c.op != "/override/Method" {
+		t.Fatalf("explicit ServerContext override lost, op = %q", c.op)
+	}
+	if c.kind != "thrift" {
+		t.Fatalf("ServerContext must derive thrift kind from rpcinfo, got %q", c.kind)
+	}
+}
+
+// TestOperation 覆盖 operation 组装的退化分支。
+func TestOperation(t *testing.T) {
+	if got := operation(transport.KindGRPC, "svc", "M"); got != "/svc/M" {
+		t.Errorf("grpc op = %q", got)
+	}
+	if got := operation(transportx.KindThrift, "svc", "M"); got != "svc.M" {
+		t.Errorf("thrift op = %q", got)
+	}
+	if got := operation(transport.KindGRPC, "", "M"); got != "M" {
+		t.Errorf("missing service op = %q", got)
+	}
+	if got := operation(transport.KindGRPC, "svc", ""); got != "svc" {
+		t.Errorf("missing method op = %q", got)
+	}
+	if got := operation(transport.KindGRPC, "", ""); got != "" {
+		t.Errorf("empty op = %q", got)
+	}
 }

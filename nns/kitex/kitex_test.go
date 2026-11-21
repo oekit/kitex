@@ -34,6 +34,19 @@ func TestNewResolver(t *testing.T) {
 	}
 }
 
+// TestNewResolver_NilPanics 回归（#315）：nil ServiceClient 必须构造期
+// fail-fast，与同包 NewRegistry 同口径——旧实现把 c.GetInstances 取方法值
+// 时就把 nil 接收者带进闭包，首次 Resolve 在 lbcache 刷新 goroutine 裸
+// nil deref 带崩进程。
+func TestNewResolver_NilPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("NewResolver(nil) must panic at construction time")
+		}
+	}()
+	NewResolver(nil)
+}
+
 func TestResolver_Name(t *testing.T) {
 	c := newTestClient()
 	r := NewResolver(c)

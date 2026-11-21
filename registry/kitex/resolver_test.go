@@ -32,6 +32,18 @@ func TestNewResolver(t *testing.T) {
 	}
 }
 
+// TestNewResolver_NilPanics 回归（#315）：nil discoverer 必须构造期 fail-fast。
+// 旧实现构造全绿，首次 Resolve 在 Kitex lbcache 刷新 goroutine 里裸 nil
+// deref——没有任何 recover 能接住，直接带崩进程。
+func TestNewResolver_NilPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("NewResolver(nil) must panic at construction time")
+		}
+	}()
+	NewResolver(nil)
+}
+
 func TestResolver_Target(t *testing.T) {
 	mock := &registrymocks.Discoverer{}
 	r := NewResolver(mock)

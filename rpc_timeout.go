@@ -30,6 +30,7 @@ func withRPCTimeout(clientService, serverService string, gov *GovernanceConfig) 
 			govLog.Info("rpc_timeout config updated", "dataId", dataID, "methods", n)
 		}
 	}); err != nil {
+		// 状态已记入 gov.SubscriptionStates()，后台按指数退避自动重连（#315）。
 		govLog.Warn("subscribe rpc_timeout config failed", "dataId", dataID, logx.ErrKey, err)
 	}
 

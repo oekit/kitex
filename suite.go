@@ -102,6 +102,14 @@ func WithMetrics(reg prom.Registerer, namespace string) ClientSuiteOption {
 // clientService 为当前服务名，serverService 为被调服务名。
 // governance 为 [NewGovernanceConfig] 返回的治理配置客户端。
 //
+// gov 为 nil 且显式启用了任一策略（[WithRetry]/[WithRPCTimeout]/
+// [WithCircuitBreaker]）时构造期 panic fail-fast（#315）：旧实现只打 Warn
+// 并静默不装策略，Nacos 配置客户端漏传/构造失败时治理层全裸奔且无信号。
+// 不需要治理策略时不要传上述 option。
+//
+// 订阅失败（Nacos 抖动）不会 panic：经 gov.SubscriptionStates() 可查当前
+// 降级状态，后台按指数退避自动重连。
+//
 // 使用方式：
 //
 //	suite := kitex.NewClientSuite("my-service", "echo-service", gov,
@@ -118,13 +126,8 @@ func NewClientSuite(clientService, serverService string, gov *GovernanceConfig, 
 	var clientOpts []client.Option
 	var closers []func() error
 
-	if gov == nil {
-		if cfg.retryEnabled || cfg.rpcTimeoutEnabled || cfg.circuitBreakEnabled {
-			govLog.Warn("governance client is nil, requested policies stay at kitex defaults",
-				"retry", cfg.retryEnabled,
-				"rpcTimeout", cfg.rpcTimeoutEnabled,
-				"circuitBreaker", cfg.circuitBreakEnabled)
-		}
+	if gov == nil && (cfg.retryEnabled || cfg.rpcTimeoutEnabled || cfg.circuitBreakEnabled) {
+		panic("kitex: NewClientSuite: governance config 不能为 nil（显式启用了 retry/rpc_timeout/circuit_breaker；构造期 fail-fast，#315）")
 	}
 	if cfg.retryEnabled && gov != nil {
 		opts, closer := withRetry(clientService, serverService, gov)
@@ -177,6 +180,13 @@ func WithLimitReporter(r klimiter.LimitReporter) ServerSuiteOption {
 // serverService 为当前服务名。
 // governance 为 [NewGovernanceConfig] 返回的治理配置客户端。
 //
+// gov 为 nil 且显式启用 [WithLimiter] 时构造期 panic fail-fast（#315）：
+// 旧实现只打 Warn 并静默不装限流，Nacos 配置客户端漏传/构造失败时治理层
+// 全裸奔且无信号。不需要限流时不要传 WithLimiter。
+//
+// 订阅失败（Nacos 抖动）不会 panic：经 gov.SubscriptionStates() 可查当前
+// 降级状态，后台按指数退避自动重连。
+//
 // 使用方式：
 //
 //	suite := kitex.NewServerSuite("echo-service", gov, kitex.WithLimiter())
@@ -190,8 +200,7 @@ func NewServerSuite(serverService string, gov *GovernanceConfig, opts ...ServerS
 	var serverOpts []server.Option
 
 	if gov == nil && cfg.limiterEnabled {
-		govLog.Warn("governance client is nil, limiter stays disabled",
-			"limiter", cfg.limiterEnabled)
+		panic("kitex: NewServerSuite: governance config 不能为 nil（显式启用了 limiter；构造期 fail-fast，#315）")
 	}
 	if cfg.limiterEnabled && gov != nil {
 		serverOpts = append(serverOpts, withLimiter(serverService, gov, cfg.limitReporter)...)
