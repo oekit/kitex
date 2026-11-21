@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
@@ -511,8 +512,8 @@ func TestSubscribe_ListenErrorSkipsInitialPull(t *testing.T) {
 }
 
 // TestSubscribe_ListenConfigErrorThenRetry 回归测试：ListenConfig 失败后
-// listening 标志与回调注册必须回滚——否则重试时因 listening=true 跳过
-// 监听器注册，该 dataID 永久失去热更新。
+// listening 标志必须回滚（否则重试时因 listening=true 跳过监听器注册，
+// 该 dataID 永久失去热更新）；回调保留供后台重试补注册（#315）。
 func TestSubscribe_ListenConfigErrorThenRetry(t *testing.T) {
 	var listenCalls atomic.Int32
 	var mu sync.Mutex
@@ -528,19 +529,26 @@ func TestSubscribe_ListenConfigErrorThenRetry(t *testing.T) {
 			return nil
 		},
 	}
-	g, _ := NewGovernanceConfig(stub)
+	// 退避拉到 1h，隔离本用例对「手工二次 subscribe」的计数断言；
+	// t.Cleanup 的 Close 会终止后台 goroutine。
+	g, _ := NewGovernanceConfig(stub, WithGovernanceRetryBackoff(time.Hour, time.Hour))
+	t.Cleanup(func() { _ = g.Close() })
 
 	// 第一次：ListenConfig 失败
 	if err := g.subscribe("data-id", func(_ string) {}); err == nil {
 		t.Fatal("expected first subscribe to fail")
 	}
 
-	// 失败后回调注册应已回滚
+	// listening 标记回滚，但回调保留（后台重试用）
 	g.mu.RLock()
 	remaining := len(g.callbacks["data-id"])
+	listening := g.listening["data-id"]
 	g.mu.RUnlock()
-	if remaining != 0 {
-		t.Errorf("expected callback rolled back after ListenConfig error, got %d", remaining)
+	if remaining != 1 {
+		t.Errorf("expected callback retained for background retry, got %d", remaining)
+	}
+	if listening {
+		t.Error("expected listening flag rolled back after ListenConfig error")
 	}
 
 	// 第二次：恢复后重试，监听器必须重新注册
@@ -552,5 +560,183 @@ func TestSubscribe_ListenConfigErrorThenRetry(t *testing.T) {
 	}
 	if got := listenCalls.Load(); got != 2 {
 		t.Errorf("expected ListenConfig called twice (flag rolled back), got %d", got)
+	}
+}
+
+// waitSubscription 轮询等待订阅状态满足 cond（后台重试是异步的）。
+func waitSubscription(t *testing.T, g *GovernanceConfig, dataID string, cond func(SubscriptionState) bool) SubscriptionState {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	var last SubscriptionState
+	for time.Now().Before(deadline) {
+		st, _ := g.SubscriptionState(dataID)
+		last = st
+		if cond(st) {
+			return st
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("subscription %s did not reach expected state, last=%+v", dataID, last)
+	return last
+}
+
+// TestSubscriptionStates_ListenFailureThenRecovery 回归（#315）：ListenConfig
+// 失败必须暴露可查降级状态，并由后台指数退避自动补注册恢复（含配置回调）。
+func TestSubscriptionStates_ListenFailureThenRecovery(t *testing.T) {
+	var listenCalls atomic.Int32
+	stub := &stubConfigClient{
+		listenConfigFunc: func(_ vo.ConfigParam) error {
+			if listenCalls.Add(1) == 1 {
+				return errors.New("nacos jitter")
+			}
+			return nil
+		},
+		getConfigFunc: func(_ vo.ConfigParam) (string, error) {
+			return `{"qps_limit":10}`, nil
+		},
+	}
+	g, err := NewGovernanceConfig(stub, WithGovernanceRetryBackoff(10*time.Millisecond, 40*time.Millisecond))
+	if err != nil {
+		t.Fatalf("NewGovernanceConfig: %v", err)
+	}
+	t.Cleanup(func() { _ = g.Close() })
+
+	var updates atomic.Int32
+	if err := g.subscribe("svc.retry", func(string) { updates.Add(1) }); err == nil {
+		t.Fatal("first ListenConfig must fail")
+	}
+
+	st, ok := g.SubscriptionState("svc.retry")
+	if !ok {
+		t.Fatal("failure state must be observable")
+	}
+	if st.Active {
+		t.Error("listener must be inactive after ListenConfig failure")
+	}
+	if st.LastError == nil || st.Attempts == 0 || st.NextRetry.IsZero() {
+		t.Errorf("degraded state incomplete: %+v", st)
+	}
+	if !g.Degraded() {
+		t.Error("Degraded() must report true while subscription is broken")
+	}
+
+	// 后台重试：第二次 ListenConfig 成功 + 首拉分发配置，状态自愈。
+	st = waitSubscription(t, g, "svc.retry", func(s SubscriptionState) bool {
+		return s.Active && s.LastError == nil
+	})
+	if st.Attempts != 0 {
+		t.Errorf("Attempts must reset after recovery, got %d", st.Attempts)
+	}
+	if got := updates.Load(); got == 0 {
+		t.Error("recovered subscription must pull and dispatch initial config")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for updates.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if updates.Load() == 0 {
+		t.Error("initial config was not delivered after recovery")
+	}
+	if g.Degraded() {
+		t.Error("Degraded() must clear after recovery")
+	}
+}
+
+// TestSubscriptionStates_GetConfigFailureThenRecovery 首拉 GetConfig 失败
+// （监听器已注册）同样计入降级状态并后台重试，而不是只打一条 Warn。
+func TestSubscriptionStates_GetConfigFailureThenRecovery(t *testing.T) {
+	var gets atomic.Int32
+	stub := &stubConfigClient{
+		listenConfigFunc: func(_ vo.ConfigParam) error { return nil },
+		getConfigFunc: func(_ vo.ConfigParam) (string, error) {
+			if gets.Add(1) == 1 {
+				return "", errors.New("config service unavailable")
+			}
+			return `{"qps_limit":1}`, nil
+		},
+	}
+	g, err := NewGovernanceConfig(stub, WithGovernanceRetryBackoff(10*time.Millisecond, 40*time.Millisecond))
+	if err != nil {
+		t.Fatalf("NewGovernanceConfig: %v", err)
+	}
+	t.Cleanup(func() { _ = g.Close() })
+
+	var updates atomic.Int32
+	if err := g.subscribe("svc.limit", func(string) { updates.Add(1) }); err != nil {
+		t.Fatalf("GetConfig failure must not fail subscribe (listener is active), got %v", err)
+	}
+	st, _ := g.SubscriptionState("svc.limit")
+	if !st.Active || st.LastError == nil {
+		t.Fatalf("initial pull failure must be degraded but listener-active: %+v", st)
+	}
+	if !g.Degraded() {
+		t.Error("Degraded() must report initial-pull failure")
+	}
+
+	waitSubscription(t, g, "svc.limit", func(s SubscriptionState) bool {
+		return s.Active && s.LastError == nil && s.Attempts == 0
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for updates.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if updates.Load() == 0 {
+		t.Error("recovered initial pull must dispatch config to callbacks")
+	}
+}
+
+// TestSubscriptionStates_CloseStopsRetry Close 必须终止后台重试，避免
+// 对象关停后继续打 Nacos / 泄漏 goroutine。
+func TestSubscriptionStates_CloseStopsRetry(t *testing.T) {
+	var listenCalls atomic.Int32
+	stub := &stubConfigClient{
+		listenConfigFunc: func(_ vo.ConfigParam) error {
+			listenCalls.Add(1)
+			return errors.New("still down")
+		},
+	}
+	g, err := NewGovernanceConfig(stub, WithGovernanceRetryBackoff(5*time.Millisecond, 10*time.Millisecond))
+	if err != nil {
+		t.Fatalf("NewGovernanceConfig: %v", err)
+	}
+	if err := g.subscribe("svc.down", func(string) {}); err == nil {
+		t.Fatal("expected subscribe failure")
+	}
+	if err := g.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// 给在途重试一个收尾窗口，之后计数必须稳定。
+	time.Sleep(30 * time.Millisecond)
+	before := listenCalls.Load()
+	time.Sleep(100 * time.Millisecond)
+	if after := listenCalls.Load(); after != before {
+		t.Fatalf("background retry continued after Close: %d -> %d", before, after)
+	}
+	if !g.Degraded() {
+		t.Error("closed config must report degraded (no active subscriptions)")
+	}
+}
+
+// TestNewGovernanceConfig_TemplateSubscriptionFailureRecorded 模板订阅失败
+// （config.go 的 NewGovernanceConfig 路径）同样必须落入可查状态。
+func TestNewGovernanceConfig_TemplateSubscriptionFailureRecorded(t *testing.T) {
+	stub := &stubConfigClient{
+		listenConfigFunc: func(_ vo.ConfigParam) error { return errors.New("nacos down") },
+	}
+	g, err := NewGovernanceConfig(stub,
+		WithGovernanceTemplate("svc.governance"),
+		WithGovernanceRetryBackoff(time.Hour, time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("NewGovernanceConfig: %v", err)
+	}
+	t.Cleanup(func() { _ = g.Close() })
+
+	st, ok := g.SubscriptionState("svc.governance")
+	if !ok {
+		t.Fatal("template subscription failure must be recorded")
+	}
+	if st.Active || st.LastError == nil {
+		t.Fatalf("template subscription must be degraded: %+v", st)
 	}
 }

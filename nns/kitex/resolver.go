@@ -32,7 +32,16 @@ var _ discovery.Resolver = (*nnsResolver)(nil)
 // NewResolver 创建基于 NNS ServiceClient 的 Kitex Resolver。
 //
 // 返回的 Resolver 可直接传给 Kitex Client 的 client.WithResolver 选项。
+//
+// c 为 nil 时构造期 panic fail-fast（与同包 [NewRegistry] 同口径，#315）——
+// 配置错误启动即暴露，避免拖到 Kitex lbcache 刷新 goroutine 才以裸 nil
+// deref 炸出「未知来源 panic」。判定用手写 c == nil 而非
+// [sdbridge.EnsureNotNil]：c 是具体类型指针，类型化 nil 装箱进 any 后
+// `dep == nil` 恒为 false（EnsureNotNil 只适用于接口依赖）。
 func NewResolver(c *nnsclient.ServiceClient) discovery.Resolver {
+	if c == nil {
+		panic("nns-kitex: NewResolver: client 不能为 nil（构造期 fail-fast，#315）")
+	}
 	return &nnsResolver{
 		core: sdbridge.NewResolverCore(c.GetInstances, resolverName, resolverErrPrefix),
 	}

@@ -9,8 +9,11 @@
 //     （kitexotel.NewServerTracingSuite / kitexotel.NewClientTracingSuite）。
 //     v0.7.0 起本包不再持有该能力：obs-opentelemetry 会把 apache/thrift 抬到
 //     v0.16.0，留在根模块会打断下游按 thrift 0.13 生成的 Thrift 代码（#37）。
-//   - 治理配置：从 Nacos 配置中心加载 retry/rpc_timeout/circuit_breaker/limiter 策略并热更新（见 [NewGovernanceConfig]）。
-//   - Suite 聚合：以 Kitex [client.Suite]/[server.Suite] 形式聚合治理选项（见 [NewClientSuite]、[NewServerSuite]）。
+//   - 治理配置：从 Nacos 配置中心加载 retry/rpc_timeout/circuit_breaker/limiter 策略并热更新（见 [NewGovernanceConfig]）；
+//     订阅失败可经 [GovernanceConfig.SubscriptionStates] / [GovernanceConfig.Degraded] 查询，
+//     后台按指数退避自动重连（[WithGovernanceRetryBackoff] 调参，#315）。
+//   - Suite 聚合：以 Kitex [client.Suite]/[server.Suite] 形式聚合治理选项（见 [NewClientSuite]、[NewServerSuite]）；
+//     gov 为 nil 且显式启用策略时构造期 panic（fail-fast，#315）。
 //   - 启动辅助：与 ekit [bootstrap.App] 集成的生命周期管理（见 [RunServer]）。
 //
 // # 快速开始
