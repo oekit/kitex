@@ -2,6 +2,16 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.10.0] — 2026-11-21
+
+- 消费方后处理收编面（#281/#288，octopus 两段管线实证）：
+
+- feat: thrift2openapi 新增 -envelope-fields 包络字段定制（有序；data 承载业务载荷，其余按名取类型；缺省形态输出逐字不变）——消费方 msg→message 改名 + trace_id 追加不再靠后处理（#281）
+- feat: thrift2openapi 新增 -error-responses 统一错误响应模板（code=描述）；api.noauth/-auth-exempt 路由跳过 401；IDL 显式同码响应不覆盖（#281）
+- feat: thrift2openapi 新增 -extra-routes 结构化补录表（YAML/JSON）——IDL 外手写路由进文档；plain（text/plain 非包络）/data（包络内联 schema）两形态；security 三态；豁免删除后应用允许覆盖；非法条目构造期报错（#288）
+
+关联问题单：kitex#281、kitex#288。
+
 ## [v0.9.0] — 2026-11-21
 
 - 第三轮设计/缺陷审计（2026-11-21）kitex 修复：
