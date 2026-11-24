@@ -3,12 +3,13 @@ package kitex
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/kerrors"
+	"github.com/cloudwego/kitex/pkg/retry"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/transmeta"
 	"github.com/cloudwego/kitex/pkg/utils"
@@ -99,7 +100,8 @@ func TestWithBizErrorBridge_NoInstance(t *testing.T) {
 	}
 }
 
-// TestWithBizErrorBridge_DetailedError 验证 DetailedError 兜底。
+// TestWithBizErrorBridge_DetailedError 验证 DetailedError 兜底,Message 为
+// 固定短文案(#298 脱敏回归,同 TestFromKitexError_DetailedError)。
 func TestWithBizErrorBridge_DetailedError(t *testing.T) {
 	inner := kerrors.ErrInternalException.WithCause(errors.New("boom"))
 	ep := invokeMiddleware(t, (&fakeEndpoint{err: inner}).wrap())
@@ -115,6 +117,10 @@ func TestWithBizErrorBridge_DetailedError(t *testing.T) {
 	}
 	if biz.BizCode != 50000 {
 		t.Errorf("BizCode = %d, want 50000", biz.BizCode)
+	}
+	if biz.Message != "rpc error" {
+		t.Errorf("Message = %q, want fixed %q (#298: 不得携带 de.Error() 全文)",
+			biz.Message, "rpc error")
 	}
 }
 
@@ -258,7 +264,48 @@ func TestFromKitexError_ACL(t *testing.T) {
 	}
 }
 
-// TestFromKitexError_DetailedError 验证 DetailedError 兜底转 50000。
+// TestFromKitexError_Overlimit #300:服务端限流/连接数超限的哨兵族统一走
+// 50300/503(对齐 middleware shedding 口径)。一个 errors.Is 覆盖整个哨兵族:
+// ErrConnOverLimit / ErrQPSOverLimit 都是 ErrOverlimit.WithCause 派生的
+// DetailedError,DetailedError.Is 命中 de.basic == ErrOverlimit。
+//
+// 可达性注意(探针实证,见 issue #300 调查结论):默认 thrift ping-pong 下
+// 该哨兵不随线上传输(client 收到的是 ErrRemoteOrNetwork DetailedError),
+// 本用例钉的是「哨兵族出现在 client 错误链时的归类」;线上拒绝的不可达性
+// 由 bridge_e2e_test.go 的 TestE2E_ServerOverlimitNotRemotelyIdentifiable
+// canary 钉住——kitex 未来回传类型化错误时该 canary 会先红。
+func TestFromKitexError_Overlimit(t *testing.T) {
+	for _, sentinel := range []error{kerrors.ErrOverlimit, kerrors.ErrConnOverLimit, kerrors.ErrQPSOverLimit} {
+		biz, ok := FromKitexError(sentinel)
+		if !ok || biz == nil {
+			t.Fatalf("[%v] expected BizError, got (%v, %v)", sentinel, biz, ok)
+		}
+		if biz.BizCode != 50300 {
+			t.Errorf("[%v] BizCode = %d, want 50300 (shedding 口径)", sentinel, biz.BizCode)
+		}
+		if biz.HTTPCode != 503 {
+			t.Errorf("[%v] HTTPCode = %d, want 503", sentinel, biz.HTTPCode)
+		}
+		if biz.Message != "request over limit" {
+			t.Errorf("[%v] Message = %q, want %q", sentinel, biz.Message, "request over limit")
+		}
+	}
+
+	// wrapped 形态(errors.Is 链式)同样命中。
+	wrapped := ekiterr.Wrapf(kerrors.ErrQPSOverLimit, "rpc layer")
+	biz, ok := FromKitexError(wrapped)
+	if !ok || biz == nil {
+		t.Fatalf("expected BizError for wrapped overlimit, got (%v, %v)", biz, ok)
+	}
+	if biz.BizCode != 50300 {
+		t.Errorf("wrapped BizCode = %d, want 50300", biz.BizCode)
+	}
+}
+
+// TestFromKitexError_DetailedError 验证 DetailedError 兜底转 50000,且
+// Message 为固定短文案(#298 脱敏回归):de.Error() 携带的传输层细节/错误链
+// 全文不得进 Message(否则经 writeBizError 回显进 HTTP 响应体),原文只留
+// Cause 链。
 // DetailedError 只能通过 basicError.WithCause/WithCauseAndStack 链式构造
 // (字段 unexported,无公开 NewDetailedError)。
 func TestFromKitexError_DetailedError(t *testing.T) {
@@ -273,8 +320,16 @@ func TestFromKitexError_DetailedError(t *testing.T) {
 	if biz.HTTPCode != 500 {
 		t.Errorf("HTTPCode = %d, want 500", biz.HTTPCode)
 	}
-	if biz.Message == "" {
-		t.Error("Message should be populated from DetailedError")
+	if biz.Message != "rpc error" {
+		t.Errorf("Message = %q, want fixed %q (#298: 不得携带 de.Error() 全文)",
+			biz.Message, "rpc error")
+	}
+	if strings.Contains(biz.Message, "test cause") {
+		t.Errorf("Message %q must not contain cause text (#298 脱敏)", biz.Message)
+	}
+	// 原始错误链不断:cause 经 Unwrap 可达,排障信息不丢。
+	if !errors.Is(biz, de) {
+		t.Error("errors.Is(biz, de) should hold via Cause chain")
 	}
 }
 
@@ -349,7 +404,7 @@ func TestFromKitexError_PreservesCauseChain(t *testing.T) {
 
 	// BizStatusError:kitex 官方提取器对 bridged 错误仍应可识别
 	bse := kerrors.NewBizStatusError(1001, "order not found")
-	wrapped := fmt.Errorf("rpc layer: %w", bse)
+	wrapped := ekiterr.Wrapf(bse, "rpc layer")
 	biz3, ok := FromKitexError(wrapped)
 	if !ok {
 		t.Fatal("expected biz status bridged")
@@ -436,5 +491,102 @@ func TestWithBizErrorBridge_TTHeaderPrereqs(t *testing.T) {
 	}
 	if len(o.MWBs) != 1 {
 		t.Errorf("len(MWBs) = %d, want 1 (bridge middleware)", len(o.MWBs))
+	}
+}
+
+// applyClientOptions 按 kitex Options.Apply 的语义（先普通 option、再
+// TailOptions）应用一组 client.Option，返回最终 Options（#315 构造期检测用）。
+func applyClientOptions(t *testing.T, opts ...client.Option) *client.Options {
+	t.Helper()
+	o := &client.Options{Configs: rpcinfo.NewRPCConfig()}
+	var di utils.Slice
+	for _, op := range opts {
+		op.F(o, &di)
+	}
+	for _, op := range o.TailOptions {
+		op.F(o, &di)
+	}
+	o.TailOptions = nil
+	return o
+}
+
+// TestBizErrorRetryConflict_AllErrorRetry 回归（#315）：WithBizErrorBridge 与
+// retry.AllErrorRetry 组合必须在构造期被识别（TailOption 覆盖 option 顺序）。
+func TestBizErrorRetryConflict_AllErrorRetry(t *testing.T) {
+	// bridge 在前、retry 在后：F 内直接检测会漏掉，tail 检测必须覆盖。
+	o := applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithSpecifiedResultRetry(retry.AllErrorRetry()),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("AllErrorRetry conflict not detected (retry option after bridge)")
+	}
+
+	// retry 在前、bridge 在后同样必须命中。
+	o = applyClientOptions(t,
+		client.WithSpecifiedResultRetry(retry.AllErrorRetry()),
+		WithBizErrorBridge(),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("AllErrorRetry conflict not detected (retry option before bridge)")
+	}
+}
+
+// TestBizErrorRetryConflict_FailurePolicy FailurePolicy/MixedPolicy 内嵌的
+// ShouldResultRetry 同样是重试谓词来源，必须识别。
+func TestBizErrorRetryConflict_FailurePolicy(t *testing.T) {
+	fp := retry.NewFailurePolicyWithResultRetry(retry.AllErrorRetry())
+	o := applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithFailureRetry(fp),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("FailurePolicy with AllErrorRetry not detected")
+	}
+
+	mixed := retry.NewMixedPolicyWithResultRetry(10, retry.AllErrorRetry())
+	o = applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithMixedRetry(mixed),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) == 0 {
+		t.Fatal("MixedPolicy with AllErrorRetry not detected")
+	}
+}
+
+// TestBizErrorRetryConflict_Excluded predicate 显式排除 *BizError 时不得误报。
+func TestBizErrorRetryConflict_Excluded(t *testing.T) {
+	safe := &retry.ShouldResultRetry{
+		ErrorRetryWithCtx: func(_ context.Context, err error, _ rpcinfo.RPCInfo) bool {
+			if _, isBiz := ekiterr.AsBizError(err); isBiz {
+				return false
+			}
+			return err != nil
+		},
+	}
+	o := applyClientOptions(t,
+		WithBizErrorBridge(),
+		client.WithSpecifiedResultRetry(safe),
+	)
+	if got := bizErrorRetryConflictSources(o); len(got) != 0 {
+		t.Fatalf("biz-error-excluding predicate must not conflict, got %v", got)
+	}
+
+	// 无 result-retry 配置时同样无冲突。
+	o = applyClientOptions(t, WithBizErrorBridge())
+	if got := bizErrorRetryConflictSources(o); len(got) != 0 {
+		t.Fatalf("no retry config must not conflict, got %v", got)
+	}
+}
+
+// TestBizErrorRetryConflict_PanicPredicateIgnored 诊断探测不能打挂构造：
+// 自定义谓词 panic 时按不冲突处理。
+func TestBizErrorRetryConflict_PanicPredicateIgnored(t *testing.T) {
+	rr := &retry.ShouldResultRetry{
+		ErrorRetryWithCtx: func(context.Context, error, rpcinfo.RPCInfo) bool { panic("boom") },
+	}
+	o := applyClientOptions(t, WithBizErrorBridge(), client.WithSpecifiedResultRetry(rr))
+	if got := bizErrorRetryConflictSources(o); len(got) != 0 {
+		t.Fatalf("panicking predicate must be ignored, got %v", got)
 	}
 }

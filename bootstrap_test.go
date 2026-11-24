@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/oekit/concurrency/async"
 	"github.com/oekit/core/lifecycle"
 	echoservice "github.com/oekit/kitex/internal/e2e/kitex_gen/kitex/echo/echoservice"
+	"github.com/oekit/logx"
 )
 
 // fakeServer 是 server.Server 的最小测试实现：允许测试编程 Run/Stop 的返回行为。
@@ -156,6 +158,223 @@ func TestRunServer_StopCloserDelegates(t *testing.T) {
 	}
 	if !stopCalled {
 		t.Fatal("closer did not call svr.Stop()")
+	}
+}
+
+// captureHandler 是记录 Message 的最小 slog.Handler，供 captureKitexLog
+// 组装内存捕获 logger。
+type captureHandler struct {
+	mu   sync.Mutex
+	msgs []string
+}
+
+func (h *captureHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.msgs = append(h.msgs, r.Message)
+	return nil
+}
+
+func (h *captureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *captureHandler) WithGroup(string) slog.Handler      { return h }
+
+// captureKitexLog 把 logx 默认 logger 换成内存捕获（NewSlogLogger +
+// captureHandler），返回消息快照函数。srvLog 是 Delegating logger，
+// SetDefault 换代后自动跟随新实现——RunServer closer 的看门狗 Warn 据此断言。
+func captureKitexLog(t *testing.T) func() []string {
+	t.Helper()
+	h := &captureHandler{}
+	old := logx.Default()
+	logx.SetDefault(logx.NewSlogLogger("kitex-test", logx.WithHandler(h)))
+	t.Cleanup(func() { logx.SetDefault(old) })
+	return func() []string {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return append([]string(nil), h.msgs...)
+	}
+}
+
+// waitForLog 轮询快照直到出现 want 消息（预算耗尽 → AfterFunc 异步触发，
+// 需要等窗口）或超时失败。
+func waitForLog(t *testing.T, snapshot func() []string, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, m := range snapshot() {
+			if strings.Contains(m, want) {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected log %q within 2s, got %v", want, snapshot())
+}
+
+// TestRunServer_StopCloser_WatchdogWarnsOverBudget #299 主路径：显式配置
+// 小预算，Stop 阻塞超过预算 → closer 内置看门狗打 Warn「kitex Stop 超出
+// 关停预算仍未返回」，Stop 返回后 closer 正常结束（看门狗不动 Stop 本身）。
+func TestRunServer_StopCloser_WatchdogWarnsOverBudget(t *testing.T) {
+	snapshot := captureKitexLog(t)
+	fa := newFakeApp()
+	stopRelease := make(chan struct{})
+	svr := &fakeServer{
+		stopFunc: func() error {
+			<-stopRelease
+			return nil
+		},
+	}
+
+	RunServer(fa, "watchdog-kitex", svr, WithStopWatchdogBudget(50*time.Millisecond))
+	closer, ok := fa.closers["watchdog-kitex"]
+	if !ok {
+		t.Fatal("RunServer did not register close resource")
+	}
+
+	closerDone := make(chan error, 1)
+	async.GoSafe(func() { closerDone <- closer(context.Background()) })
+	waitForLog(t, snapshot, "kitex Stop 超出关停预算仍未返回")
+
+	close(stopRelease)
+	select {
+	case err := <-closerDone:
+		if err != nil {
+			t.Fatalf("closer returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("closer did not return after Stop released")
+	}
+}
+
+// TestRunServer_StopCloser_WatchdogBudgetFromCtxDeadline #299 零配置路径：
+// 未配 WithStopWatchdogBudget，closer ctx 携带短 deadline（core/lifecycle
+// Manager per-job 预算 / bootstrap.AddResourceTimeout 派生 jobCtx 的形态）
+// → 预算取 time.Until(deadline)。若实现误用缺省 10s，本用例 1s 内等不到
+// Warn 即失败。
+func TestRunServer_StopCloser_WatchdogBudgetFromCtxDeadline(t *testing.T) {
+	snapshot := captureKitexLog(t)
+	fa := newFakeApp()
+	stopRelease := make(chan struct{})
+	svr := &fakeServer{
+		stopFunc: func() error {
+			<-stopRelease
+			return nil
+		},
+	}
+
+	RunServer(fa, "watchdog-deadline-kitex", svr)
+	closer, ok := fa.closers["watchdog-deadline-kitex"]
+	if !ok {
+		t.Fatal("RunServer did not register close resource")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	closerDone := make(chan error, 1)
+	async.GoSafe(func() { closerDone <- closer(ctx) })
+	waitForLog(t, snapshot, "kitex Stop 超出关停预算仍未返回")
+
+	close(stopRelease)
+	select {
+	case err := <-closerDone:
+		if err != nil {
+			t.Fatalf("closer returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("closer did not return after Stop released")
+	}
+}
+
+// TestRunServer_StopCloser_NoWarnWithinBudget 预算内返回不误报：Stop 正常
+// 返回时不得出现看门狗 Warn（Timer 已停表）。
+func TestRunServer_StopCloser_NoWarnWithinBudget(t *testing.T) {
+	snapshot := captureKitexLog(t)
+	fa := newFakeApp()
+	svr := &fakeServer{
+		stopFunc: func() error { return nil },
+	}
+
+	RunServer(fa, "watchdog-quiet-kitex", svr, WithStopWatchdogBudget(50*time.Millisecond))
+	closer, ok := fa.closers["watchdog-quiet-kitex"]
+	if !ok {
+		t.Fatal("RunServer did not register close resource")
+	}
+	if err := closer(context.Background()); err != nil {
+		t.Fatalf("closer returned error: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond) // 越过预算点，确认停表生效
+	for _, m := range snapshot() {
+		if strings.Contains(m, "kitex Stop 超出关停预算仍未返回") {
+			t.Fatalf("watchdog warned although Stop returned within budget: %v", snapshot())
+		}
+	}
+}
+
+// TestRunServer_StopCloser_WatchdogBudgetInvalidFallsBack 非法值口径：预算
+// 传 0/负数回退缺省（对齐 bootstrap WithShutdownTimeout #206 口径），不
+// fail-fast 也不吞看门狗——负数预算下 ctx 无 deadline 时仍按缺省 10s 兜底。
+func TestRunServer_StopCloser_WatchdogBudgetInvalidFallsBack(t *testing.T) {
+	fa := newFakeApp()
+	svr := &fakeServer{stopFunc: func() error { return nil }}
+	RunServer(fa, "watchdog-invalid-kitex", svr, WithStopWatchdogBudget(-1))
+	closer, ok := fa.closers["watchdog-invalid-kitex"]
+	if !ok {
+		t.Fatal("RunServer did not register close resource")
+	}
+	if err := closer(context.Background()); err != nil {
+		t.Fatalf("closer returned error: %v", err)
+	}
+}
+
+// TestRunServer_OnReadyNoTarget_WaitsForListener 钉住 #290：未指定探活目标
+// （无 WithReadyAddr）时，onReady 必须等 listener 绑定成功（Started 门，
+// RegisterStartHook）后才回调——回调发生时端口必须已在监听。
+//
+// 旧实现在 svr.Run() **之前**同步回调：回调时端口必然未监听，注册窗口内
+// 消费方会拨到未就绪实例（对称 hertz #131 已收敛的同型窗口）。要旧语义
+// （Run 前同步回调）需显式 WithReadyProbeTimeout(负数) 禁用探活。
+func TestRunServer_OnReadyNoTarget_WaitsForListener(t *testing.T) {
+	addr := reserveLoopbackAddr(t)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		t.Fatalf("resolve addr: %v", err)
+	}
+
+	fa := newFakeApp()
+	svr := echoservice.NewServer(&echoHandler{},
+		server.WithServiceAddr(tcpAddr),
+		server.WithExitWaitTime(200*time.Millisecond), // 测试快速排空
+	)
+	t.Cleanup(func() { _ = svr.Stop() })
+
+	var readyCalled atomic.Int64
+	listeningAtReady := atomic.Bool{}
+	RunServer(fa, "noaddr-svc", svr,
+		WithOnReady(func(ctx context.Context) {
+			readyCalled.Add(1)
+			// 回调时刻的端口可达性是本用例的核心断言面。
+			if c, derr := net.DialTimeout("tcp", addr, 2*time.Second); derr == nil {
+				_ = c.Close()
+				listeningAtReady.Store(true)
+			}
+		}),
+		// 不设 WithReadyAddr：走 Started 门路径（#290）。
+		WithReadyProbeTimeout(5*time.Second))
+
+	deadline := time.After(10 * time.Second)
+	for readyCalled.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("onReady not called within deadline (Started gate never opened)")
+		case <-fa.requestedCh:
+			t.Fatal("server requested shutdown before becoming ready")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	if !listeningAtReady.Load() {
+		t.Fatal("onReady 回调时端口未监听——回到了 Run 前同步回调的旧语义（#290 窗口）")
 	}
 }
 
@@ -408,15 +627,49 @@ func TestRunServer_ReadyProbeTimeout(t *testing.T) {
 	fa.cancel()
 }
 
-// TestRunServer_NoProbeAddr_FiresBeforeRun 钉住无探活目标路径：
-// onReady 在 Run 前同步执行。
-func TestRunServer_NoProbeAddr_FiresBeforeRun(t *testing.T) {
+// TestRunServer_NoProbeAddr_WaitsForStartedGate 钉住无探活目标路径的新语义
+// （#290，对称 hertz #131）：onReady 不再在 Run 前同步回调，而是等 Started
+// 门（RegisterStartHook）通过后回调——fakeServer 永不启动（钩子不触发）⇒
+// 按探活超时 fail-closed 请求关机、onReady 不得回调（不能把「未监听」的
+// 实例注册出去）。正向路径（真 server 等 listener 后回调）见
+// TestRunServer_OnReadyNoTarget_WaitsForListener；需要旧「Run 前同步回调」
+// 语义用 WithReadyProbeTimeout(负数) 显式禁用探活。
+func TestRunServer_NoProbeAddr_WaitsForStartedGate(t *testing.T) {
+	fa := newFakeApp()
+	// Run 保持阻塞（真 server 形态）：立即返回会让 GoBackground 收尾先
+	// cancelProbe，探活被判「正常关停打断」（ErrProbeAborted）而不请求关机
+	// ——那不是本用例要钉的 fail-closed 路径。
+	block := make(chan struct{})
+	svr := &fakeServer{runFunc: func() error { <-block; return nil }}
+	t.Cleanup(func() { close(block) })
+
+	var readyCalled atomic.Int64
+	RunServer(fa, "test-svc", svr,
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyProbeTimeout(300*time.Millisecond))
+
+	select {
+	case <-fa.requestedCh:
+		// Started 门在探活预算内未打开：按启动失败请求关机（fail-closed）。
+	case <-time.After(3 * time.Second):
+		t.Fatal("started gate 未打开时必须按探活超时请求关机")
+	}
+	if got := readyCalled.Load(); got != 0 {
+		t.Fatalf("onReady called %d times, want 0（server 未 started 不得回调）", got)
+	}
+	fa.cancel()
+}
+
+// TestRunServer_ProbeDisabled_FiresBeforeRun 钉住显式禁用探活路径的保留
+// 语义（WithReadyProbeTimeout 负数）：onReady 在 Run 前同步执行。
+func TestRunServer_ProbeDisabled_FiresBeforeRun(t *testing.T) {
 	fa := newFakeApp()
 	svr := &fakeServer{}
 
 	var readyCalled atomic.Int64
 	RunServer(fa, "test-svc", svr,
-		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }))
+		WithOnReady(func(ctx context.Context) { readyCalled.Add(1) }),
+		WithReadyProbeTimeout(-time.Second))
 
 	deadline := time.After(3 * time.Second)
 	for readyCalled.Load() == 0 {
@@ -424,7 +677,7 @@ func TestRunServer_NoProbeAddr_FiresBeforeRun(t *testing.T) {
 		case <-deadline:
 			t.Fatal("onReady not called within deadline")
 		case <-fa.requestedCh:
-			t.Fatal("no-probe path should not request shutdown")
+			t.Fatal("probe-disabled path should not request shutdown")
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -476,8 +729,9 @@ func TestRunServer_NegativeProbeTimeout_DisablesProbeSyncFires(t *testing.T) {
 	fa.cancel()
 }
 
-// TestWithReadyProbeTimeoutOptionSemantics 钉住 oekit#142 对齐后的 option
-// 边界语义：负数=禁用探活；零值/正数=不禁用（零值在 probeAndReady 内取默认 5s）。
+// TestWithReadyProbeTimeoutOptionSemantics 钉住 option 边界语义：负数=禁用
+// 探活；零值/正数=不禁用（零值经 core/lifecycle.ReadyProbe 取默认 5s，#208
+// 探活机制单源）。
 func TestWithReadyProbeTimeoutOptionSemantics(t *testing.T) {
 	cases := []struct {
 		name     string

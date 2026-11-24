@@ -7,16 +7,18 @@ import (
 
 	kregistry "github.com/cloudwego/kitex/pkg/registry"
 	nnsclient "github.com/oekit/nns/client"
+	ekiterr "github.com/oekit/pkg/errors"
+	"github.com/oekit/registry"
 	"github.com/oekit/registry/sdbridge"
 )
 
-// defaultRegisterTimeout 是 Register/Deregister 的缺省单次预算（#212，与
-// registry/kitex 的 #191 同根因同口径）：kitex 的 kregistry.Registry 接口
-// 无 ctx，框架在 server.Start 后自动 Register、server.Stop 时 Deregister
-// ——不设预算则底层 Registrar（如 nacosimpl 经 invokeWithCtx 竞速）拿到的
-// ctx 永无截止时间，注册中心不可达时（反）注册退化为 SDK 内部阻塞时长，
-// 拖住整个优雅关停序列。缺省 3s，应显著小于 bootstrap 关停 closer 的预算。
-const defaultRegisterTimeout = 3 * time.Second
+// Register/Deregister 的缺省单次预算（#212，与 registry/kitex 的 #191 同
+// 根因同口径）：kitex 的 kregistry.Registry 接口无 ctx，框架在 server.Start
+// 后自动 Register、server.Stop 时 Deregister——不设预算则底层 Registrar
+// （如 nacosimpl 经 invokeWithCtx 竞速）拿到的 ctx 永无截止时间，注册中心
+// 不可达时（反）注册退化为 SDK 内部阻塞时长，拖住整个优雅关停序列。缺省
+// 3s，单源 [sdbridge.DefaultRegisterBudget]（#216），应显著小于 bootstrap
+// 关停 closer 的预算。
 
 // nnsRegistry 包装 nns ServiceClient，实现 Kitex registry.Registry。
 //
@@ -51,7 +53,7 @@ func WithDefaultServiceName(name string) RegistryOption {
 }
 
 // WithRegisterTimeout 设置 Register 的单次预算（#212）。缺省 3s
-// （defaultRegisterTimeout）。d <= 0 构造期 panic（fail-fast：预算是
+// （[sdbridge.DefaultRegisterBudget]）。d <= 0 构造期 panic（fail-fast：预算是
 // 防拖死关停序列的护栏，非法值静默接受等于没护栏；与 registry/kitex
 // 同款语义）。
 func WithRegisterTimeout(d time.Duration) RegistryOption {
@@ -77,12 +79,21 @@ func WithDeregisterTimeout(d time.Duration) RegistryOption {
 // NewRegistry 创建基于 NNS ServiceClient 的 Kitex Registry。
 //
 // 返回的 Registry 可直接传给 Kitex Server 的 server.WithRegistry 选项。
+// c 为 nil 时构造期 panic fail-fast（hertz#219 孪生口径，#216/#289）——
+// 配置错误启动即暴露，避免拖到框架内部 goroutine 才炸出「未知来源 panic」。
+// 判定用手写 c == nil 而非 [sdbridge.EnsureNotNil]：c 是具体类型指针，
+// 类型化 nil 指针装箱进 any 后 `dep == nil` 恒为 false（EnsureNotNil 文档
+// 明示的范围外形态，hertz/nns 侧注释点名过本坑）——EnsureNotNil 只适用于
+// 接口依赖。
 func NewRegistry(c *nnsclient.ServiceClient, opts ...RegistryOption) kregistry.Registry {
+	if c == nil {
+		panic("nns-kitex: NewRegistry: client 不能为 nil（构造期 fail-fast，#289）")
+	}
 	r := &nnsRegistry{
 		client:            c,
-		defaultWeight:     10,
-		registerTimeout:   defaultRegisterTimeout,
-		deregisterTimeout: defaultRegisterTimeout,
+		defaultWeight:     int(registry.DefaultInstanceWeight),
+		registerTimeout:   sdbridge.DefaultRegisterBudget,
+		deregisterTimeout: sdbridge.DefaultRegisterBudget,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -93,14 +104,14 @@ func NewRegistry(c *nnsclient.ServiceClient, opts ...RegistryOption) kregistry.R
 // Register 将 Kitex 服务实例注册到 NNS 注册中心。
 func (r *nnsRegistry) Register(info *kregistry.Info) error {
 	if info == nil {
-		return fmt.Errorf("nns-kitex registry: info is nil")
+		return ekiterr.New("nns-kitex registry: info is nil")
 	}
 
 	// weight <= 0 时使用 r.defaultWeight 兜底（委托 sdbridge.ToInstance）；
 	// ServiceName 为空时按 resolveServiceName 兜底（#93）
 	inst, err := sdbridge.ToInstance(r.resolveServiceName(info.ServiceName), info.Addr, info.Weight, r.defaultWeight, info.Tags)
 	if err != nil {
-		return fmt.Errorf("nns-kitex registry: %w", err)
+		return ekiterr.Wrapf(err, "nns-kitex registry")
 	}
 
 	// ServiceClient.Register 使用 Bootstrap.ServiceName 和 GetPodIP，
@@ -112,13 +123,12 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 		if r.client.MockMode() {
 			return nil // mock 模式：静默跳过
 		}
-		return fmt.Errorf("nns-kitex registry: registrar unavailable (degraded, not mock mode); service would be undiscoverable")
+		return ekiterr.New("nns-kitex registry: registrar unavailable (degraded, not mock mode); service would be undiscoverable")
 	}
-	// 单次预算（#212，同 registry/kitex 的 #191）：接口无 ctx，这里以
-	// WithTimeout(Background) 补上，底层 Registrar 的取消/超时语义自此生效。
-	ctx, cancel := context.WithTimeout(context.Background(), r.registerTimeout)
-	defer cancel()
-	return r.client.Registrar().Register(ctx, inst)
+	// 单次预算（#212 → #216 单源收口 sdbridge.RegisterWithBudget）：接口无
+	// ctx，这里补 Background + 预算，底层 Registrar 的取消/超时语义自此生效
+	// （budget <= 0 回退缺省预算）。
+	return sdbridge.RegisterWithBudget(context.Background(), r.client.Registrar(), inst, r.registerTimeout)
 }
 
 // Deregister 从 NNS 注册中心注销 Kitex 服务实例。
@@ -126,25 +136,24 @@ func (r *nnsRegistry) Register(info *kregistry.Info) error {
 // 依赖 metadata/权重匹配的注册中心才能正确注销。
 func (r *nnsRegistry) Deregister(info *kregistry.Info) error {
 	if info == nil {
-		return fmt.Errorf("nns-kitex registry: info is nil")
+		return ekiterr.New("nns-kitex registry: info is nil")
 	}
 
 	inst, err := sdbridge.ToInstance(r.resolveServiceName(info.ServiceName), info.Addr, info.Weight, r.defaultWeight, info.Tags)
 	if err != nil {
-		return fmt.Errorf("nns-kitex registry: %w", err)
+		return ekiterr.Wrapf(err, "nns-kitex registry")
 	}
 
 	if r.client.Registrar() == nil {
 		if r.client.MockMode() {
 			return nil // mock 模式：静默跳过
 		}
-		return fmt.Errorf("nns-kitex registry: registrar unavailable (degraded, not mock mode)")
+		return ekiterr.New("nns-kitex registry: registrar unavailable (degraded, not mock mode)")
 	}
-	// 单次预算（#212）：server.Stop 关停路径的 Deregister 不再有无限预算，
-	// 注册中心不可达时最多阻塞 deregisterTimeout。
-	ctx, cancel := context.WithTimeout(context.Background(), r.deregisterTimeout)
-	defer cancel()
-	return r.client.Registrar().Deregister(ctx, inst)
+	// 单次预算（#212 → #216 单源收口 sdbridge.DeregisterWithBudget）：
+	// server.Stop 关停路径的 Deregister 不再有无限预算，注册中心不可达时
+	// 最多阻塞 deregisterTimeout。
+	return sdbridge.DeregisterWithBudget(context.Background(), r.client.Registrar(), inst, r.deregisterTimeout)
 }
 
 // resolveServiceName 对空服务名兜底（#93）：Kitex 填进 registry.Info.ServiceName

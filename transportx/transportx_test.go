@@ -262,9 +262,89 @@ func TestServerContext_ChainSemantics(t *testing.T) {
 		t.Errorf("non-empty Set must write through to metainfo transient bucket, got (%q,%v)", v, ok)
 	}
 
-	// ReplyHeader 为只读空实现
-	if _, ok := tr.ReplyHeader().(transport.NoopHeader); !ok {
-		t.Errorf("ReplyHeader = %T, want transport.NoopHeader", tr.ReplyHeader())
+	// ReplyHeader 无 backward 发送桶时写入静默丢弃、读返回空（不 panic）。
+	if got := tr.ReplyHeader().Get("missing"); got != "" {
+		t.Errorf("ReplyHeader without backward bucket must read empty, got %q", got)
+	}
+	tr.ReplyHeader().Set("dropped", "v")
+	if ks := tr.ReplyHeader().Keys(); len(ks) != 0 {
+		t.Errorf("ReplyHeader without backward bucket must not retain keys, got %v", ks)
+	}
+}
+
+// TestReplyHeader_BackwardRoundTrip 回归（#315）：ReplyHeader 必须经 metainfo
+// backward API 真正回传，而不是写入即丢弃的 NoopHeader。这里直接验证
+// 服务端「待回传」桶内容，并模拟客户端 RecvBackwardValue 的接收口径。
+func TestReplyHeader_BackwardRoundTrip(t *testing.T) {
+	serverCtx := metainfo.WithBackwardValuesToSend(context.Background())
+	box := &serverCtx
+	tr := &serverTransport{box: box, kind: transport.KindGRPC}
+
+	h := tr.ReplyHeader()
+	h.Set("X-Tenant-ID", "tenant-42")
+	h.Set("X-Canary", "v2")
+
+	// 服务端待回传桶：WriteMeta 回传的内容与此同源。
+	kvs := metainfo.AllBackwardValuesToSend(*box)
+	if kvs["X-Tenant-ID"] != "tenant-42" || kvs["X-Canary"] != "v2" {
+		t.Fatalf("backward values not recorded: %v", kvs)
+	}
+
+	// Header 读接口与待回传桶一致。
+	if got := h.Get("X-Tenant-ID"); got != "tenant-42" {
+		t.Errorf("ReplyHeader Get = %q, want tenant-42", got)
+	}
+	if vs := h.Values("X-Canary"); !slices.Equal(vs, []string{"v2"}) {
+		t.Errorf("ReplyHeader Values = %v, want [v2]", vs)
+	}
+	if keys := h.Keys(); !slices.Equal(keys, []string{"X-Canary", "X-Tenant-ID"}) {
+		t.Errorf("ReplyHeader Keys = %v, want sorted [X-Canary X-Tenant-ID]", keys)
+	}
+
+	// 客户端侧：WithBackwardValues 标记接收桶后由 transmeta Client handler
+	// 灌入响应 trans info，RecvBackwardValue 应读到服务端回传值。
+	cliCtx := metainfo.WithBackwardValues(context.Background())
+	metainfo.SetBackwardValuesFromMap(cliCtx, kvs)
+	if got, ok := metainfo.RecvBackwardValue(cliCtx, "X-Tenant-ID"); !ok || got != "tenant-42" {
+		t.Errorf("client RecvBackwardValue = (%q,%v), want (tenant-42,true)", got, ok)
+	}
+}
+
+// TestReplyHeader_SingleValueSemantics 钉住 metainfo backward 的单值模型：
+// Add 覆盖、Del 以空值覆盖（无删除 API），Keys 仍保留该 key。
+func TestReplyHeader_SingleValueSemantics(t *testing.T) {
+	ctx := metainfo.WithBackwardValuesToSend(context.Background())
+	box := &ctx
+	h := (&serverTransport{box: box}).ReplyHeader()
+
+	h.Add("k", "v1")
+	h.Add("k", "v2")
+	if got := h.Get("k"); got != "v2" {
+		t.Errorf("Add must be last-wins on backward channel, got %q", got)
+	}
+	h.Del("k")
+	if got := h.Get("k"); got != "" {
+		t.Errorf("Del must blank the value, got %q", got)
+	}
+	if keys := h.Keys(); !slices.Equal(keys, []string{"k"}) {
+		t.Errorf("Del cannot remove backward key, Keys = %v", keys)
+	}
+}
+
+// TestServerKindOption 钉住 Thrift/gRPC 区分（#315）：缺省 grpc，可显式设
+// Thrift；空 Kind 忽略（保持缺省）。
+func TestServerKindOption(t *testing.T) {
+	tr := NewServerTransport(context.Background(), "e", "o", WithServerKind(KindThrift))
+	if tr.Kind() != KindThrift {
+		t.Errorf("Kind = %q, want thrift", tr.Kind())
+	}
+	tr = NewServerTransport(context.Background(), "e", "o", WithServerKind(""))
+	if tr.Kind() != transport.KindGRPC {
+		t.Errorf("empty kind must keep default grpc, got %q", tr.Kind())
+	}
+	tr = NewServerTransport(context.Background(), "e", "o")
+	if tr.Kind() != transport.KindGRPC {
+		t.Errorf("default Kind = %q, want grpc", tr.Kind())
 	}
 }
 

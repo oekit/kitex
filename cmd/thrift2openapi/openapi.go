@@ -185,7 +185,7 @@ type SecurityReqs struct {
 }
 
 // MarshalYAML 非空时输出 [{scheme: []}]，空（免鉴权）时输出 []。
-func (s *SecurityReqs) MarshalYAML() (interface{}, error) {
+func (s *SecurityReqs) MarshalYAML() (any, error) {
 	out := []yamlMapSlice{}
 	for _, scheme := range s.Schemes {
 		m := yamlMapSlice{}

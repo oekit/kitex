@@ -2,6 +2,75 @@
 
 由 ekit v0.34.0（git.enjoye.top/enjoydream/ekit，冻结维护）拆分而来。所有 notable 变更记录如下。
 
+## [v0.10.1] — 2026-11-23
+
+- build: 依赖地板对齐（矩阵地板波次）——新地板：github.com/oekit/pkg v0.59.0 。零行为变化；已发布产物的 go.mod 地板此前滞后于矩阵登记版本，本版把新地板焊进已发布产物。
+
+## [v0.10.0] — 2026-11-21
+
+- 消费方后处理收编面（#281/#288，octopus 两段管线实证）：
+
+- feat: thrift2openapi 新增 -envelope-fields 包络字段定制（有序；data 承载业务载荷，其余按名取类型；缺省形态输出逐字不变）——消费方 msg→message 改名 + trace_id 追加不再靠后处理（#281）
+- feat: thrift2openapi 新增 -error-responses 统一错误响应模板（code=描述）；api.noauth/-auth-exempt 路由跳过 401；IDL 显式同码响应不覆盖（#281）
+- feat: thrift2openapi 新增 -extra-routes 结构化补录表（YAML/JSON）——IDL 外手写路由进文档；plain（text/plain 非包络）/data（包络内联 schema）两形态；security 三态；豁免删除后应用允许覆盖；非法条目构造期报错（#288）
+
+关联问题单：kitex#281、kitex#288。
+
+## [v0.9.0] — 2026-11-21
+
+- 第三轮设计/缺陷审计（2026-11-21）kitex 修复：
+
+- fix: 两处 NewResolver 补 nil fail-fast（接口走 EnsureNotNil、具体指针 c==nil）——lbcache 刷新 goroutine 裸 panic 堵死（#315）
+- feat: chainmw.ToKitex 自动注入 transport 上下文（operation 从 rpcinfo 推导、kind 区分 grpc/thrift），ServerContext 变可选覆盖——AccessLog SkipPaths/Redact 不再因漏挂 ServerContext 失效（#315）
+- fix: transportx ReplyHeader 改用 metainfo.SendBackwardValue 真正回传——MetadataPropagate 在 kitex 上不再恒 no-op（#315）
+- feat: WithBizErrorBridge 组合 AllErrorRetry 运行期告警一次 + godoc 明确禁止（#315）
+- feat: 治理订阅可观测+自愈——SubscriptionStates/Degraded + 指数退避后台重试（WithGovernanceRetryBackoff）；NewClientSuite/NewServerSuite 在 gov==nil 且显式启用策略时构造期 fail-fast——Nacos 抖动不再让治理层静默裸奔且永不恢复（#315）
+
+关联问题单：kitex#315。
+
+## [observability/tracing/instrumentation/kitexotel/v0.7.17] — 2026-11-20
+
+- fix(bridge): DetailedError 兜底 Message 脱敏——de.Error() 全文改固定短文案 rpc error，原文留 Cause 链经 Fail 落日志（#298）
+fix(bootstrap): RunServer closer 加 Stop 看门狗，超关停预算未返回打 Warn（#299）
+fix(bridge): FromKitexError 加 overlimit 映射段（ErrOverlimit 哨兵族→50300/503）；探针实证 client 侧远端不可识别，canary 钉住前提（#300）
+refactor(e2e): startEchoServer 收编 internal/e2e 导出；kitexotel 断言对齐正典类型化 1001（重复用例删除）；kitexprom 文档补 latency_us 单位说明（#301）
+
+## [v0.8.7] — 2026-11-20
+
+- fix(bridge): DetailedError 兜底 Message 脱敏——de.Error() 全文（传输层细节/远端错误链）改固定短文案 rpc error，原文留 Cause 链经 Fail 落日志；此前经 writeBizError 原样回显 HTTP 响应体，穿透 cause 不回显防泄漏教义（#298）
+fix(bootstrap): RunServer closer 加 Stop 看门狗——超关停预算未返回打 Warn（预算取 ctx deadline→WithStopWatchdogBudget→缺省 10s）；此前 Stop 挂死时整条关停链无限期卡死且无信号（#299）
+fix(bridge): FromKitexError 加 overlimit 映射段（ErrOverlimit 哨兵族→50300/503，对齐 shedding 口径）——限流拒绝此前被 DetailedError 兜底成 50000/500 内部错误；探针实证 client 侧远端不可识别（哨兵不随线上传输），canary 钉住前提（#300）
+refactor(e2e): startEchoServer 收编 internal/e2e 导出（42 行×2 逐字副本消除，kitexotel 可 import）；kitexotel BizErrorBridge 断言对齐正典类型化 1001（滞留 bridge.go #94 已作废旧口径的重复用例删除）；kitexprom 文档补 latency_us 单位说明（#301）
+
+## [v0.8.6] — 2026-11-19
+
+- 第二轮重复逻辑深挖审计（2026-11-19）kitex 修复：
+
+- fix: nns NewRegistry 的 nil fail-fast 改手写 c == nil 判定——sdbridge.EnsureNotNil 对具体类型指针恒 false（typed-nil 装箱进 any 后 dep == nil 不成立，hertz/nns 注释点名的坑），NewRegistry(nil) 此前静默放行、首次 Register 在框架注册 goroutine 里 nil deref；补 NewRegistry(nil) panic 回归；defaultWeight 裸 10 接 registry.DefaultInstanceWeight（#289）
+- fix: WithOnReady 无探活目标路径不再 Run 前同步回调——改走 ReadyProbe 空 Target 路径等 RegisterStartHook 的 Started 门（listener 绑定成功进入 serving）后回调，消除「注册中心已有实例但端口未监听」窗口（对称 hertz #131 已收敛口径）；显式禁用（WithReadyProbeTimeout 负数）保留旧同步回调语义；补真 server 回归断言回调时端口已在监听（#290）
+
+关联问题单：kitex#289、kitex#290。
+
+## [v0.8.5] — 2026-11-18
+
+- 两项单源消费:RunServer 探活骨架委托 core/lifecycle.ReadyProbe(core#208,#142 口径更新为单源引用);kitex/nns 两 adapter 接入 sdbridge 注册预算/权重兜底,NewRegistry 补 EnsureNotNil(hertz#219 孪生收口);行为与导出面不变,地板 core v0.17.0/registry v0.8.0/pkg v0.54.0
+
+## [v0.8.4] — 2026-11-18
+
+- build: 矩阵依赖地板对齐(pkg v0.53.0/metrics v0.4.2)
+
+## [v0.8.3] — 2026-11-16
+
+- refactor: fmt.Errorf → oekit/pkg/errors 三形态对位替换（#520 替换波）+ 依赖地板抬至 pkg v0.52.0。文案逐字节同形（测试断言零修改），多 %w/%w 居中/哨兵前置形态按仓规保留
+
+## [v0.8.2] — 2026-11-14
+
+- refactor: interface{} → any(1.18 别名,9 处)——panic 中间件/bridge/kitexmeta/熔断指标/kitexotel option/thrift2openapi,零行为差异可读性现代化
+
+## [v0.8.1] — 2026-11-14
+
+- refactor(dualcontract): sort.Slice → slices.SortFunc（cmp 单比较函数，sort.Interface 三件套退役）+ reflect 遍历 for 计数 → range over int（Go 1.22）——排序口径不变，行为等价现代化
+
 ## [v0.8.0] — 2026-11-13
 
 - **BREAKING**：1) 删除 NewLogger（Deprecated 别名）——迁移 github.com/oekit/logx/kitexlog 的 kitexlog.NewLogger（行为一致）。2) 熔断指标面随 metrics v0.4.0 迁类型化入口（CircuitState 枚举/ObserveBreakerStateTyped/ObserveTransitionTyped）。地板抬 metrics v0.4.0 / pkg v0.48.0 / logx v0.11.0 / concurrency v0.36.0 / nns v0.9.0。

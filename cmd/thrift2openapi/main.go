@@ -22,6 +22,7 @@ import (
 
 	"github.com/cloudwego/thriftgo/parser"
 	"github.com/cloudwego/thriftgo/semantic"
+	ekiterr "github.com/oekit/pkg/errors"
 )
 
 func main() {
@@ -38,24 +39,27 @@ func run(args []string) error {
 		fs.PrintDefaults()
 	}
 	var (
-		idlPath  = fs.String("idl", "", "thrift IDL 路径（必填，include 相对该文件解析）")
-		outPath  = fs.String("o", "", "输出路径（缺省写 stdout）")
-		asJSON   = fs.Bool("json", false, "输出 JSON（缺省 YAML）")
-		title    = fs.String("title", "", "文档标题（缺省取第一个 service 名）")
-		version  = fs.String("version", "", "文档版本（缺省 1.0.0）")
-		desc     = fs.String("description", "", "文档描述")
-		basePath = fs.String("base-path", "", "servers[0].url 前缀（如 https://svc.example.com/api）")
-		exempt   = fs.String("exempt", "", "路由豁免表（逗号分隔）：这些路径不出现在文档（替代手搓脚本的硬编码豁免表）")
-		auth     = fs.String("auth", "", "全局鉴权方案名（如 bearerAuth）：非空时全路由挂 security")
-		authExmp = fs.String("auth-exempt", "", "免鉴权路由表（逗号分隔，免 JWT 标记）：文档中显式 security: []")
-		envelope = fs.Bool("envelope", false, "统一响应包络 {code, msg, data}")
+		idlPath   = fs.String("idl", "", "thrift IDL 路径（必填，include 相对该文件解析）")
+		outPath   = fs.String("o", "", "输出路径（缺省写 stdout）")
+		asJSON    = fs.Bool("json", false, "输出 JSON（缺省 YAML）")
+		title     = fs.String("title", "", "文档标题（缺省取第一个 service 名）")
+		version   = fs.String("version", "", "文档版本（缺省 1.0.0）")
+		desc      = fs.String("description", "", "文档描述")
+		basePath  = fs.String("base-path", "", "servers[0].url 前缀（如 https://svc.example.com/api）")
+		exempt    = fs.String("exempt", "", "路由豁免表（逗号分隔）：这些路径不出现在文档（替代手搓脚本的硬编码豁免表）")
+		auth      = fs.String("auth", "", "全局鉴权方案名（如 bearerAuth）：非空时全路由挂 security")
+		authExmp  = fs.String("auth-exempt", "", "免鉴权路由表（逗号分隔，免 JWT 标记）：文档中显式 security: []")
+		envelope  = fs.Bool("envelope", false, "统一响应包络 {code, msg, data}")
+		envFields = fs.String("envelope-fields", "", "包络字段定制（逗号分隔、有序，如 code,message,data,trace_id；名为 data 的字段承载业务载荷；空=缺省 code,msg,data）")
+		errResp   = fs.String("error-responses", "", "统一错误响应模板（code=描述，逗号分隔，如 400=参数错误,401=未登录或 token 失效；免鉴权路由跳过 401）")
+		extraRts  = fs.String("extra-routes", "", "IDL 外路由补录表（YAML/JSON 文件）：把手写路由（探活/共享模块等）补进文档")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *idlPath == "" {
 		fs.Usage()
-		return fmt.Errorf("-idl 必填")
+		return ekiterr.New("-idl 必填")
 	}
 
 	ast, err := parseIDL(*idlPath)
@@ -63,6 +67,17 @@ func run(args []string) error {
 		return err
 	}
 
+	errResps, err := parseErrorResponses(*errResp)
+	if err != nil {
+		return err
+	}
+	var extraRoutes []ExtraRoute
+	if *extraRts != "" {
+		extraRoutes, err = loadExtraRoutes(*extraRts)
+		if err != nil {
+			return err
+		}
+	}
 	opts := Options{
 		Title:           *title,
 		Version:         *version,
@@ -72,6 +87,9 @@ func run(args []string) error {
 		AuthScheme:      *auth,
 		AuthExemptPaths: csv(*authExmp),
 		Envelope:        *envelope,
+		EnvelopeFields:  csv(*envFields),
+		ErrorResponses:  errResps,
+		ExtraRoutes:     extraRoutes,
 	}
 
 	doc, err := Generate(ast, opts)
@@ -86,7 +104,7 @@ func run(args []string) error {
 		out, err = marshalYAMLDoc(doc)
 	}
 	if err != nil {
-		return fmt.Errorf("序列化文档: %w", err)
+		return ekiterr.Wrapf(err, "序列化文档")
 	}
 
 	if *outPath == "" {
@@ -119,13 +137,13 @@ func csv(s string) []string {
 func parseIDL(path string) (*parser.Thrift, error) {
 	ast, err := parser.ParseFile(path, nil, true)
 	if err != nil {
-		return nil, fmt.Errorf("解析 %s: %w", path, err)
+		return nil, ekiterr.Wrapf(err, "解析 %s", path)
 	}
 	if err := semantic.ResolveSymbols(ast); err != nil {
-		return nil, fmt.Errorf("符号解析 %s: %w", path, err)
+		return nil, ekiterr.Wrapf(err, "符号解析 %s", path)
 	}
 	if _, err := semantic.NewChecker(semantic.Options{FixWarnings: true}).CheckAll(ast); err != nil {
-		return nil, fmt.Errorf("语义检查 %s: %w", path, err)
+		return nil, ekiterr.Wrapf(err, "语义检查 %s", path)
 	}
 	return ast, nil
 }

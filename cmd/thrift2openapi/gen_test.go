@@ -428,3 +428,189 @@ func diffHint(want, got string) string {
 	}
 	return "行数不同：want=" + strconv.Itoa(len(wl)) + " got=" + strconv.Itoa(len(gl))
 }
+
+// ===== 第三轮审计 feat：#281 包络字段定制 + 错误响应模板 / #288 补录表 =====
+
+// TestGenerate_EnvelopeCustomFields #281：-envelope-fields 有序字段定制——
+// octopus 形态 {code, data, message, trace_id}（msg→message 改名 + trace_id）。
+func TestGenerate_EnvelopeCustomFields(t *testing.T) {
+	opts := goldenOpts
+	opts.EnvelopeFields = []string{"code", "data", "message", "trace_id"}
+	doc, err := Generate(parseDemo(t), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := doc.Paths.items["/api/v1/send"].Post.Responses.items["200"].
+		Content.items["application/json"].Schema
+	names := env.Properties.keys
+	want := []string{"code", "data", "message", "trace_id"}
+	if len(names) != len(want) {
+		t.Fatalf("包络字段 = %v, want %v（有序定制，data 承载载荷）", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("包络字段顺序 = %v, want %v", names, want)
+		}
+	}
+	if env.Properties.Get("msg") != nil {
+		t.Error("定制字段后不应再出现缺省 msg")
+	}
+	if got := env.Properties.Get("data"); got == nil || got.Ref != "#/components/schemas/SendResp" {
+		t.Errorf("data 仍应 $ref 业务 schema, got %+v", got)
+	}
+	// code/message 必填、trace_id 可选（与缺省 code,msg 必填口径一致）。
+	req := strings.Join(env.Required, ",")
+	if req != "code,message" {
+		t.Errorf("required = %q, want code,message", req)
+	}
+}
+
+// TestGenerate_ErrorResponses #281：统一错误响应模板；免鉴权路由（api.noauth
+// / -auth-exempt）跳过 401；IDL 显式声明同码响应不被覆盖。
+func TestGenerate_ErrorResponses(t *testing.T) {
+	dir := t.TempDir()
+	idl := filepath.Join(dir, "err.thrift")
+	content := `
+service Svc {
+    void ping() (api.get = "/ping", api.noauth = "true")
+    void login() (api.post = "/login")
+}
+`
+	if err := os.WriteFile(idl, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ast, err := parseIDL(idl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Generate(ast, Options{
+		AuthScheme:      "bearerAuth",
+		AuthExemptPaths: []string{"/login"},
+		ErrorResponses: []ErrorResponse{
+			{Code: 400, Description: "参数错误"},
+			{Code: 401, Description: "未登录或 token 失效"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ping := doc.Paths.items["/ping"].Get
+	if _, ok := ping.Responses.items["400"]; !ok {
+		t.Error("ping 应带 400 模板")
+	}
+	if _, ok := ping.Responses.items["401"]; ok {
+		t.Error("api.noauth 路由必须跳过 401")
+	}
+	login := doc.Paths.items["/login"].Post
+	if _, ok := login.Responses.items["401"]; ok {
+		t.Error("-auth-exempt 路由必须跳过 401")
+	}
+	if got := login.Responses.items["400"]; got == nil || got.Description != "参数错误" {
+		t.Errorf("login 400 描述 = %+v", got)
+	}
+}
+
+// TestParseErrorResponses 解析器：正常/坏段/重复。
+func TestParseErrorResponses(t *testing.T) {
+	got, err := parseErrorResponses(" 400=参数错误 , 401=未登录或 token 失效 ")
+	if err != nil || len(got) != 2 || got[0].Code != 400 || got[1].Description != "未登录或 token 失效" {
+		t.Fatalf("parse = %+v, %v", got, err)
+	}
+	for _, bad := range []string{"400", "abc=x", "400="} {
+		if _, err := parseErrorResponses(bad); err == nil {
+			t.Errorf("坏段 %q 必须报错", bad)
+		}
+	}
+	if _, err := parseErrorResponses("400=a,400=b"); err == nil {
+		t.Error("重复 code 必须报错")
+	}
+}
+
+// TestGenerate_ExtraRoutes #288：补录表两种消费形态——plain（text/plain 非
+// 包络探活）与 data（包络内联 schema）；security 三态；非法条目报错。
+func TestGenerate_ExtraRoutes(t *testing.T) {
+	dir := t.TempDir()
+	routes := filepath.Join(dir, "extra.yaml")
+	yamlSrc := `
+- method: GET
+  path: /ping
+  tag: Infra
+  summary: Ping
+  plain: true
+  security: []
+- method: GET
+  path: /api/v2/user/info
+  tag: Identity
+  summary: UserInfo
+  data:
+    userId: {type: string}
+    username: {type: string}
+  security:
+    - bearerAuth: []
+- method: POST
+  path: /api/v2/extra
+  summary: Extra
+  responses:
+    "400": 参数错误
+`
+	if err := os.WriteFile(routes, []byte(yamlSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadExtraRoutes(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Generate(parseDemo(t), Options{
+		AuthScheme:  "bearerAuth",
+		ExtraRoutes: loaded,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// plain 探活：text/plain string、security: []。
+	ping := doc.Paths.items["/ping"].Get
+	pt := ping.Responses.items["200"].Content.items["text/plain"]
+	if pt == nil || pt.Schema.Type != "string" {
+		t.Errorf("plain 200 应为 text/plain string, got %+v", pt)
+	}
+	if ping.Security == nil || len(ping.Security.Schemes) != 0 {
+		t.Errorf("显式空 security 应输出 security: [], got %+v", ping.Security)
+	}
+
+	// data 包络：application/json、data 内联 schema、security 显式 scheme。
+	info := doc.Paths.items["/api/v2/user/info"].Get
+	body := info.Responses.items["200"].Content.items["application/json"].Schema
+	data := body.Properties.Get("data")
+	if data == nil || data.Properties.Get("userId") == nil {
+		t.Errorf("data 内联 schema 缺失, got %+v", data)
+	}
+	if info.Security == nil || len(info.Security.Schemes) != 1 || info.Security.Schemes[0] != "bearerAuth" {
+		t.Errorf("显式 security 应为 bearerAuth, got %+v", info.Security)
+	}
+
+	// 无 data/plain + 附加 responses：仅描述 + 400。
+	extra := doc.Paths.items["/api/v2/extra"].Post
+	if extra.Responses.items["200"].Content != nil {
+		t.Error("未给 data/plain 的补录不应生成 content")
+	}
+	if got := extra.Responses.items["400"]; got == nil || got.Description != "参数错误" {
+		t.Errorf("补录 400 响应缺失, got %+v", got)
+	}
+	// security 缺省跟随全局 -auth。
+	if extra.Security == nil || len(extra.Security.Schemes) != 1 {
+		t.Errorf("security 缺省应跟随全局 -auth, got %+v", extra.Security)
+	}
+
+	// 非法条目：坏方法 / 坏 path / 重复条目。
+	for name, bad := range map[string][]ExtraRoute{
+		"badMethod": {{Method: "options", Path: "/x"}},
+		"badPath":   {{Method: "get", Path: "x"}},
+		"dup":       {{Method: "get", Path: "/x"}, {Method: "GET", Path: "/x"}},
+	} {
+		if _, err := Generate(parseDemo(t), Options{ExtraRoutes: bad}); err == nil {
+			t.Errorf("%s 必须报错", name)
+		}
+	}
+}

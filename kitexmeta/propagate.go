@@ -98,7 +98,7 @@ func FromContextExtractor(ctx context.Context) (string, string, bool) {
 func PropagateMiddlewareBuilder() endpoint.MiddlewareBuilder {
 	return func(ctx context.Context) endpoint.Middleware {
 		return func(next endpoint.Endpoint) endpoint.Endpoint {
-			return func(ctx context.Context, req, resp interface{}) error {
+			return func(ctx context.Context, req, resp any) error {
 				if key, val, ok := FromContextExtractor(ctx); ok {
 					ctx = metainfo.WithPersistentValue(ctx, key, val)
 				}
@@ -132,7 +132,7 @@ func PropagateMiddlewareBuilder() endpoint.MiddlewareBuilder {
 func WithMetaKeyExtractors(extractors ...MetaKeyExtractor) endpoint.MiddlewareBuilder {
 	return func(ctx context.Context) endpoint.Middleware {
 		return func(next endpoint.Endpoint) endpoint.Endpoint {
-			return func(ctx context.Context, req, resp interface{}) error {
+			return func(ctx context.Context, req, resp any) error {
 				for _, extract := range extractors {
 					if k, v, ok := extract(ctx); ok {
 						ctx = metainfo.WithPersistentValue(ctx, k, v)

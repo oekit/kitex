@@ -14,6 +14,11 @@
 //	kitex_client_latency_us{caller,callee,method,status,retry}
 //	kitex_server_throughput{...} / kitex_server_latency_us{...}
 //
+// ⚠️ 单位口径（#301）：kitex_client_latency_us / kitex_server_latency_us 的
+// 单位是**微秒**（插件实现 histogram.Observe(float64(d.Microseconds()))），
+// 与 httpx 指标族的 seconds 口径不可直接比——跨协议看时延先统一换算
+// （1s = 1e6µs）再画图/告警。
+//
 // retry label 来自 kitex RPCInfo RetryTag（重试序号），配合治理栈的
 // kitex.WithMetrics 服务级 retry_attempts_total 可交叉定位方法级重试热点。
 //

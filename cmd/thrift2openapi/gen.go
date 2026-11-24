@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/cloudwego/thriftgo/parser"
+	ekiterr "github.com/oekit/pkg/errors"
 )
 
 // paramKinds 表驱动 api.* 参数注解 → OpenAPI 参数位置（#186）。
@@ -56,6 +57,16 @@ type Options struct {
 	AuthExemptPaths []string
 	// Envelope 开启统一响应包络 {code, msg, data}。
 	Envelope bool
+	// EnvelopeFields 定制包络字段列表（有序；"data" 处承载业务载荷，其余
+	// 按名取类型：code→integer int32、msg/message/trace_id/其它→string）。
+	// 空 = 缺省 {code, msg, data}（#281）。
+	EnvelopeFields []string
+	// ErrorResponses 给每个操作追加的非 200 响应模板（-error-responses，
+	// #281）；免鉴权路由跳过 401。
+	ErrorResponses []ErrorResponse
+	// ExtraRoutes 是 -extra-routes 文件解析出的补录路由（IDL 外路由进
+	// 文档，#288）。
+	ExtraRoutes []ExtraRoute
 }
 
 // httpVerbs 是识别的 api.<verb> 集合（手搓脚本只支持 get/post，这里全支持）。
@@ -112,13 +123,18 @@ func (g *generator) run() error {
 	for _, svc := range g.ast.Services {
 		for _, fn := range svc.Functions {
 			if err := g.genFunction(svc, fn); err != nil {
-				return fmt.Errorf("%s.%s: %w", svc.Name, fn.Name, err)
+				return ekiterr.Wrapf(err, "%s.%s", svc.Name, fn.Name)
 			}
 		}
 	}
 	// 路由豁免：文档中删除（#124：消 MANUAL_ROUTES 与注册知识双写）。
 	for _, p := range g.opts.ExemptPaths {
 		g.doc.Paths.Delete(p)
+	}
+	// 补录路由（#288）：IDL 外手写路由进文档；在豁免删除之后应用——
+	// 补录是显式意图，允许覆盖同名 method+path 的内联生成操作。
+	if err := g.applyExtraRoutes(); err != nil {
+		return err
 	}
 	if g.schemas.Len() > 0 || g.opts.AuthScheme != "" {
 		g.doc.Components = &Components{Schemas: g.schemas}
@@ -225,7 +241,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 			desc := cleanComment(f.ReservedComments)
 			s, err := g.schemaForType(f.Type)
 			if err != nil {
-				return nil, fmt.Errorf("field %s: %w", f.Name, err)
+				return nil, ekiterr.Wrapf(err, "field %s", f.Name)
 			}
 			applyDefault(s, f.Default)
 			// api.query/path/header/cookie 四个 case 逐行同构（#186）：表驱动收敛，
@@ -317,7 +333,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 			continue
 		}
 		if !strings.Contains(tpl, "{"+p.Name+"}") {
-			return nil, fmt.Errorf("path 参数 %q 未出现在路由模板 %q 中", p.Name, tpl)
+			return nil, ekiterr.Newf("path 参数 %q 未出现在路由模板 %q 中", p.Name, tpl)
 		}
 	}
 	op.Parameters = params
@@ -329,20 +345,7 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 			return nil, err
 		}
 		if g.opts.Envelope {
-			data := s
-			s = &Schema{
-				Type: "object",
-				Description: "统一响应包络（-envelope）：code=0 成功，" +
-					"msg=错误信息，data=业务载荷",
-				Properties: func() *Properties {
-					p := NewProperties()
-					p.Set("code", &Schema{Type: "integer", Format: "int32", Description: "业务码，0=成功"})
-					p.Set("msg", &Schema{Type: "string", Description: "错误信息，成功时为空"})
-					p.Set("data", data)
-					return p
-				}(),
-				Required: []string{"code", "msg"},
-			}
+			s = buildEnvelope(s, g.opts.EnvelopeFields)
 		}
 		resp := &Response{Description: respDesc(fn)}
 		mt := NewMediaTypes()
@@ -353,12 +356,16 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 		op.Responses.Set("200", &Response{Description: respDesc(fn)})
 	}
 
-	// 鉴权标记：全局 security（-auth）；免 JWT（api.noauth / -auth-exempt）
-	// 显式置空，文档读者可分辨「无要求」与「未标记」。
+	// 免鉴权判定（api.noauth / -auth-exempt）：security 与错误响应模板共用。
+	noAuth := annoBool(fn.Annotations, "api.noauth") || containsPath(g.opts.AuthExemptPaths, tpl)
+
+	// 统一错误响应模板（-error-responses，#281）：免鉴权路由跳过 401。
+	g.applyErrorResponses(op, noAuth)
+
+	// 鉴权标记：全局 security（-auth）；免 JWT 显式置空，文档读者可分辨
+	// 「无要求」与「未标记」。
 	if g.opts.AuthScheme != "" {
-		if annoBool(fn.Annotations, "api.noauth") {
-			op.Security = &SecurityReqs{}
-		} else if containsPath(g.opts.AuthExemptPaths, tpl) {
+		if noAuth {
 			op.Security = &SecurityReqs{}
 		} else {
 			op.Security = &SecurityReqs{Schemes: []string{g.opts.AuthScheme}}
@@ -367,11 +374,53 @@ func (g *generator) genOperation(svc *parser.Service, fn *parser.Function, verb,
 	return op, nil
 }
 
+// buildEnvelope 依据字段列表构造统一响应包络（#281）。
+//
+// fields 空 = 缺省 {code, msg, data}；"data" 处承载业务载荷，其余按字段名
+// 取类型：code→integer int32（必填）、msg/message→string（必填）、
+// trace_id/其它→string（可选，调用方可自行在 extra-routes 里给 schema）。
+// 字段顺序即输出顺序——消费方（octopus #281）的 {code, data, message,
+// trace_id} 形态逐字段可配。
+func buildEnvelope(data *Schema, fields []string) *Schema {
+	// 缺省形态的 description 逐字保留（golden 钉住的历史文案）。
+	if len(fields) == 0 {
+		fields = []string{"code", "msg", "data"}
+	}
+	p := NewProperties()
+	var required []string
+	for _, name := range fields {
+		switch name {
+		case "data":
+			p.Set("data", data)
+		case "code":
+			p.Set("code", &Schema{Type: "integer", Format: "int32", Description: "业务码，0=成功"})
+			required = append(required, name)
+		case "msg", "message":
+			p.Set(name, &Schema{Type: "string", Description: "错误信息，成功时为空"})
+			required = append(required, name)
+		case "trace_id":
+			p.Set(name, &Schema{Type: "string", Description: "链路追踪 ID"})
+		default:
+			p.Set(name, &Schema{Type: "string"})
+		}
+	}
+	desc := "统一响应包络（-envelope：" + strings.Join(fields, ",") + "）"
+	if fields[0] == "code" && len(fields) == 3 && fields[1] == "msg" && fields[2] == "data" {
+		desc = "统一响应包络（-envelope）：code=0 成功，msg=错误信息，data=业务载荷"
+	}
+	return &Schema{
+		Type:        "object",
+		Description: desc,
+		Properties:  p,
+		Required:    required,
+	}
+}
+
 // schemaForType 把 thrift Type 转 OpenAPI Schema（struct/enum 进 components，
 // 其余内联）。
 func (g *generator) schemaForType(t *parser.Type) (*Schema, error) {
 	if t == nil {
-		return nil, fmt.Errorf("nil type")
+		return nil, ekiterr.New("nil type")
 	}
 	// typedef 解引用（含跨文件 typedef）。
 	if td, ok := g.resolveTypedef(t); ok {
@@ -428,7 +477,7 @@ func (g *generator) schemaForType(t *parser.Type) (*Schema, error) {
 		}
 		return g.structSchema(t.Name, st), nil
 	default:
-		return nil, fmt.Errorf("不支持的 thrift 类型 %q (category=%d)", t.Name, t.Category)
+		return nil, ekiterr.Newf("不支持的 thrift 类型 %q (category=%d)", t.Name, t.Category)
 	}
 }
 
@@ -492,7 +541,7 @@ func (g *generator) resolveStruct(t *parser.Type) (*parser.StructLike, error) {
 	if st, ok := cu.GetUnion(name); ok {
 		return st, nil
 	}
-	return nil, fmt.Errorf("找不到 struct %q", t.Name)
+	return nil, ekiterr.Newf("找不到 struct %q", t.Name)
 }
 
 // resolveEnum 解析 enum 引用（本文件或 include）。
@@ -501,7 +550,7 @@ func (g *generator) resolveEnum(t *parser.Type) (*parser.Enum, error) {
 	if e, ok := cu.GetEnum(name); ok {
 		return e, nil
 	}
-	return nil, fmt.Errorf("找不到 enum %q", t.Name)
+	return nil, ekiterr.Newf("找不到 enum %q", t.Name)
 }
 
 // resolveTypedef 解析 typedef 引用（本文件或 include）。

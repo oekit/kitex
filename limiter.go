@@ -120,6 +120,7 @@ func withLimiter(serverService string, gov *GovernanceConfig, reporter klimiter.
 	if err := gov.subscribe(dataID, func(data string) {
 		ctrl.apply(data)
 	}); err != nil {
+		// 状态已记入 gov.SubscriptionStates()，后台按指数退避自动重连（#315）。
 		govLog.Warn("subscribe limit config failed", "dataId", dataID, logx.ErrKey, err)
 	}
 

@@ -33,7 +33,12 @@ type ResolverOption func(*kitexResolver)
 // NewResolver 将 ekit [registry.Discoverer] 适配为 Kitex [discovery.Resolver]。
 //
 // 返回的 Resolver 可直接传给 Kitex Client 的 [client.WithResolver] 选项。
+//
+// disc 为 nil 时构造期 panic fail-fast（与同包 [NewRegistry] 同口径，单源
+// [sdbridge.EnsureNotNil]）——配置错误启动即暴露，避免拖到 Kitex lbcache
+// 刷新 goroutine 才以裸 nil deref 炸出「未知来源 panic」（#315）。
 func NewResolver(disc registry.Discoverer, opts ...ResolverOption) discovery.Resolver {
+	sdbridge.EnsureNotNil(disc, "kitex: NewResolver", "discoverer")
 	fetch := func(ctx context.Context, service string) ([]registry.Instance, error) {
 		return disc.Discover(ctx, service)
 	}

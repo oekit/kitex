@@ -46,7 +46,7 @@ var panicLog = logx.Delegating("kitex-panic")
 //	    ...
 //	})
 func SetDefaultPanicHandler() {
-	gofunc.SetPanicHandler(func(info *gofunc.Info, panicErr interface{}, panicStack string) {
+	gofunc.SetPanicHandler(func(info *gofunc.Info, panicErr any, panicStack string) {
 		panicLog.Error("kitex goroutine panic recovered",
 			"remote_service", info.RemoteService,
 			"remote_addr", info.RemoteAddr,
@@ -78,7 +78,7 @@ func SetDefaultPanicHandler() {
 // ri := rpcinfo.GetRPCInfo(ctx); ri.Stats(); stats.Panicked())
 func NewPanicLogMiddleware() endpoint.Middleware {
 	return func(next endpoint.Endpoint) endpoint.Endpoint {
-		return func(ctx context.Context, req, resp interface{}) (err error) {
+		return func(ctx context.Context, req, resp any) (err error) {
 			err = next(ctx, req, resp)
 			if err == nil {
 				return nil

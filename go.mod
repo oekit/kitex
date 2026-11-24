@@ -10,15 +10,15 @@ require (
 	github.com/kitex-contrib/monitor-prometheus v0.2.0
 	github.com/kitex-contrib/resolver-dns v0.1.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6
-	github.com/oekit/bootstrap v0.7.11
-	github.com/oekit/concurrency v0.36.0
-	github.com/oekit/core v0.15.2
-	github.com/oekit/logx v0.11.0
-	github.com/oekit/metrics v0.4.0
-	github.com/oekit/nns v0.9.0
-	github.com/oekit/registry v0.6.0
+	github.com/oekit/bootstrap v0.7.15
+	github.com/oekit/concurrency v0.40.0
+	github.com/oekit/core v0.18.0
+	github.com/oekit/logx v0.12.1
+	github.com/oekit/metrics v0.4.3
+	github.com/oekit/nns v0.10.2
+	github.com/oekit/registry v0.8.4
 	github.com/oekit/registry/nacos v0.2.0
-	github.com/oekit/tracing v0.4.5
+	github.com/oekit/tracing v0.4.9
 	github.com/prometheus/client_golang v1.25.0
 )
 
@@ -81,7 +81,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/oekit/pkg v0.61.1
+	github.com/oekit/pkg v0.60.0
 	github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect

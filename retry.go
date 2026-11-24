@@ -74,6 +74,7 @@ func withRetry(clientService, serverService string, gov *GovernanceConfig) ([]cl
 			govLog.Info("retry config updated", "dataId", dataID, "methods", n)
 		}
 	}); err != nil {
+		// 状态已记入 gov.SubscriptionStates()，后台按指数退避自动重连（#315）。
 		govLog.Warn("subscribe retry config failed", "dataId", dataID, logx.ErrKey, err)
 	}
 
