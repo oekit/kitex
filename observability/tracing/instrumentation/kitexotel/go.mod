@@ -56,7 +56,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/oekit/logx v0.12.1 // indirect
-	github.com/oekit/pkg v0.61.1 // indirect
 	github.com/oekit/tracing v0.4.9 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
