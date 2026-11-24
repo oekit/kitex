@@ -4,8 +4,8 @@ github.com/cloudwego/gopkg v0.2.0 h1:EU8Ahrj0rCfKZQdah50zKnlrQ1o2AdPYM87UclIqLME
 github.com/cloudwego/gopkg v0.2.0/go.mod h1:WjQPYI8PesfQalIVcLzVJBb1EAopioZ+D+3UGJ+dNBs=
 github.com/cloudwego/thriftgo v0.4.5 h1:Htm0lcftvSPEmnPzE+nWccVhOB13A/GAWfA4kQXTzVw=
 github.com/cloudwego/thriftgo v0.4.5/go.mod h1:Oqr3KTSBNhfnAIsU/wzDFEp5Kltfvxld8tmYwa+avhY=
-github.com/oekit/pkg v0.61.1 h1:vJtwzIvkiMv5Xu9m1u6mglcw1sMiDJnPL7kzK8iEIlY=
-github.com/oekit/pkg v0.61.1/go.mod h1:Cr6sJpBX2a0gAIgLa32+NY69h/UZtuN6L1ZdXtP9upo=
+github.com/oekit/pkg v0.61.2 h1:QvD2SHz6AB4esg+tneqZUwCszY5H/Zku5smCXMvRQpc=
+github.com/oekit/pkg v0.61.2/go.mod h1:Cr6sJpBX2a0gAIgLa32+NY69h/UZtuN6L1ZdXtP9upo=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
