@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/cloudwego/thriftgo v0.4.5
-	github.com/oekit/pkg v0.61.4
+	github.com/oekit/pkg v0.61.5
 	gopkg.in/yaml.v3 v3.0.1
 )
 
